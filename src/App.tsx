@@ -77,7 +77,7 @@ const App: React.FC = () => {
                 
                 if (result) {
                     generatedEbook.chapters.push({ title: chapterTitle, content: result.content, image: result.image });
-                    result.sources.forEach(source => generatedEbook.references.add(source));
+                    result.sources.forEach((source: string) => generatedEbook.references.add(source));
                     setEbook({ ...generatedEbook });
                 }
             }
@@ -145,7 +145,7 @@ const App: React.FC = () => {
                         image: result.image,
                     };
                     generatedEbook.chapters.push(newChapter);
-                    result.sources.forEach(source => generatedEbook.references.add(source));
+                    result.sources.forEach((source: string) => generatedEbook.references.add(source));
                     setEbook({ ...generatedEbook });
                 }
             }
@@ -257,7 +257,7 @@ const App: React.FC = () => {
                          <div className="flex justify-between items-center mb-4">
                             <h3 className="text-2xl font-bold text-white">Seu E-book está Pronto</h3>
                             <div className="flex gap-3">
-                                <button onClick={() => setApiKey('')} className="px-4 py-2 text-sm text-slate-400 hover:text-white underline">Trocar Chave API</button>
+                                <button onClick={() => { setApiKey(''); localStorage.removeItem('gemini_api_key'); }} className="px-4 py-2 text-sm text-slate-400 hover:text-white underline">Trocar Chave API</button>
                                 <button
                                     onClick={handleDownloadPdf}
                                     disabled={isLoading}
