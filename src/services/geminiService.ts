@@ -152,4 +152,5 @@ export const enhanceChapterContent = async (apiKey: string, title: string, conte
     }
     const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks?.map(c => c.web?.uri).filter(u => !!u) || [];
     return { content: newContent, sources: sources as string[], image };
+
 };
