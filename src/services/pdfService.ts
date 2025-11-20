@@ -1,49 +1,35 @@
+
 declare const jspdf: any;
-declare const html2canvas: any;
 
 export const generatePdf = async (element: HTMLElement, fileName: string): Promise<void> => {
-    return new Promise(async (resolve, reject) => {
-        if (typeof jspdf === 'undefined' || typeof html2canvas === 'undefined') {
+    return new Promise((resolve, reject) => {
+        if (typeof jspdf === 'undefined') {
             return reject(new Error('Bibliotecas PDF não carregadas.'));
         }
 
         const { jsPDF } = jspdf;
-        const pdf = new jsPDF('p', 'pt', 'a4');
-        const pdfWidth = pdf.internal.pageSize.getWidth(); 
-        const pdfHeight = pdf.internal.pageSize.getHeight(); 
+        // Cria o PDF em formato A4, unidade em pontos (pt) para alinhar com o CSS
+        const doc = new jsPDF('p', 'pt', 'a4');
 
-        try {
-            const canvas = await html2canvas(element, {
-                scale: 2,
+        // Configurações para transformar o HTML em PDF respeitando quebras de página
+        doc.html(element, {
+            callback: function (pdf) {
+                pdf.save(`${fileName.replace(/ /g, '_')}.pdf`);
+                resolve();
+            },
+            x: 0,
+            y: 0,
+            // Margens: [Topo, Direita, Base, Esquerda]
+            // A margem inferior (40) é crucial para o texto não tocar a borda
+            margin: [0, 0, 40, 0],
+            autoPaging: 'text', // Tenta evitar cortar linhas de texto ao meio
+            width: 595.28, // Largura padrão A4 em pontos
+            windowWidth: element.scrollWidth, // Garante a resolução correta
+            html2canvas: {
+                scale: 1, // Mantém a escala original do elemento HTML (595pt)
                 useCORS: true,
-                logging: false,
-                width: element.offsetWidth,
-                height: element.scrollHeight, 
-            });
-            
-            const imgData = canvas.toDataURL('image/png');
-            const imgWidth = canvas.width;
-            const imgHeight = canvas.height;
-            const ratio = pdfWidth / imgWidth;
-            const scaledImgHeight = imgHeight * ratio;
-
-            let heightLeft = scaledImgHeight;
-            let position = 0;
-
-            pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, scaledImgHeight);
-            heightLeft -= pdfHeight;
-
-            while (heightLeft > 0) {
-                position -= pdfHeight;
-                pdf.addPage();
-                pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, scaledImgHeight);
-                heightLeft -= pdfHeight;
+                logging: false
             }
-
-            pdf.save(`${fileName.replace(/ /g, '_')}.pdf`);
-            resolve();
-        } catch (error) {
-            reject(error);
-        }
+        });
     });
 };
