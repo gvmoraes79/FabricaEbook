@@ -62,6 +62,7 @@ export const TopicForm: React.FC<TopicFormProps> = ({ onSubmit, isLoading }) => 
                     <option value="Español">Español</option>
                     <option value="Français">Français</option>
                     <option value="Italiano">Italiano</option>
+                    <option value="Mandarim">Mandarim</option>
                 </select>
             </div>
              <div className="w-full">
