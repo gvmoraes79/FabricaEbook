@@ -50,10 +50,11 @@ export const generateCoverImage = async (apiKey: string, title: string, topic: s
 export const generateOutline = async (apiKey: string, topic: string, minPageCount: number, maxPageCount: number, language: string, observations: string): Promise<Outline> => {
     const ai = getAi(apiKey);
     const numChapters = Math.max(3, Math.ceil((minPageCount + maxPageCount) / 2 / 2));
+    const observationsPrompt = observations ? `\n\nAdditional instructions from the user: "${observations}"` : "";
     
     const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: `Create an e-book outline on '${topic}' with ${numChapters} chapters in ${language}. ${observations} Return JSON.`,
+        contents: `Create an e-book outline on '${topic}' with ${numChapters} chapters in ${language}. ${observationsPrompt} Return JSON.`,
         config: {
             responseMimeType: "application/json",
             responseSchema: {
@@ -72,7 +73,8 @@ export const generateOutline = async (apiKey: string, topic: string, minPageCoun
 
 export const generateChapterContent = async (apiKey: string, ebookTitle: string, chapterTitle: string, language: string, includeImages: boolean, observations: string) => {
     const ai = getAi(apiKey);
-    let prompt = `Write a chapter '${chapterTitle}' for e-book '${ebookTitle}' in ${language}. Approx 800 words. ${observations}`;
+    const observationsPrompt = observations ? `\n\nAdditional instructions: "${observations}"` : "";
+    let prompt = `Write a chapter '${chapterTitle}' for e-book '${ebookTitle}' in ${language}. Approx 800 words. ${observationsPrompt}`;
     if (includeImages) prompt += `\nAfter content, add '${IMAGE_PROMPT_MARKER}' followed by an image prompt.`;
 
     const response = await ai.models.generateContent({
@@ -135,6 +137,7 @@ export const structureText = async (apiKey: string, fullText: string) => {
 export const enhanceChapterContent = async (apiKey: string, title: string, content: string, options: EnhanceOptions) => {
     const ai = getAi(apiKey);
     let prompt = `Enhance chapter '${title}'. Style: ${options.style}. Language: ${options.language}. Content: ${content}`;
+    if (options.observations) prompt += `\nObservations: ${options.observations}`;
     if (options.includeImages) prompt += `\nAdd '${IMAGE_PROMPT_MARKER}' image prompt at end.`;
     
     const response = await ai.models.generateContent({
@@ -152,5 +155,4 @@ export const enhanceChapterContent = async (apiKey: string, title: string, conte
     }
     const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks?.map(c => c.web?.uri).filter(u => !!u) || [];
     return { content: newContent, sources: sources as string[], image };
-
 };
