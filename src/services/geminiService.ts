@@ -1,7 +1,6 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import type { Outline, EnhanceOptions } from '../types';
 
-// Helper para criar a instância da IA com a chave fornecida pelo usuário na hora
 const getAi = (apiKey: string) => new GoogleGenAI({ apiKey });
 const IMAGE_PROMPT_MARKER = "IMAGE_PROMPT:";
 
