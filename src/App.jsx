@@ -16,6 +16,7 @@ export default function App() {
   const [pdfLibraryLoaded, setPdfLibraryLoaded] = useState(false);
 
   // Carrega a biblioteca de PDF automaticamente via CDN
+  // É crucial para usar o jsPDF sem precisar de 'npm install'
   useEffect(() => {
     const script = document.createElement('script');
     script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
@@ -66,8 +67,14 @@ export default function App() {
 
   // --- Lógica de Geração de PDF Corrigida ---
   const generatePDF = (text, title) => {
+    // Adicionamos um modal customizado (em vez de alert) caso a biblioteca não esteja pronta
     if (!window.jspdf) {
-      alert("A ferramenta de PDF ainda está carregando. Tente novamente em alguns segundos.");
+      // Usando uma div temporária para notificação em vez de alert()
+      const notification = document.createElement('div');
+      notification.textContent = "A ferramenta de PDF ainda está carregando. Tente novamente em alguns segundos.";
+      notification.style.cssText = "position:fixed; top:20px; right:20px; background:red; color:white; padding:10px; border-radius:5px; z-index:9999;";
+      document.body.appendChild(notification);
+      setTimeout(() => document.body.removeChild(notification), 3000);
       return;
     }
 
@@ -126,7 +133,12 @@ export default function App() {
     e.preventDefault();
     
     if (!apiKey) {
-      alert("Por favor, insira sua chave de API do Google Studio no topo da página.");
+      // Substituindo alert() por uma notificação customizada
+      const notification = document.createElement('div');
+      notification.textContent = "Por favor, insira sua chave de API do Google Studio no topo da página.";
+      notification.style.cssText = "position:fixed; top:20px; right:20px; background:red; color:white; padding:10px; border-radius:5px; z-index:9999;";
+      document.body.appendChild(notification);
+      setTimeout(() => document.body.removeChild(notification), 3000);
       return;
     }
 
@@ -135,7 +147,8 @@ export default function App() {
     
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      // Usando gemini-2.5-flash-preview-09-2025 para compatibilidade com o ambiente Canvas
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-preview-09-2025" });
 
       let prompt = "";
 
@@ -180,7 +193,14 @@ export default function App() {
     } catch (error) {
       console.error(error);
       setStatusMessage('Erro: ' + error.message);
-      alert("Erro ao conectar com o Google. Verifique sua Chave API.");
+      
+      // Substituindo alert() por uma notificação customizada
+      const notification = document.createElement('div');
+      notification.textContent = `Erro ao conectar com o Google. Verifique sua Chave API. Detalhe: ${error.message}`;
+      notification.style.cssText = "position:fixed; top:20px; right:20px; background:red; color:white; padding:10px; border-radius:5px; z-index:9999;";
+      document.body.appendChild(notification);
+      setTimeout(() => document.body.removeChild(notification), 5000);
+      
       setIsProcessing(false);
     }
   };
