@@ -184,9 +184,23 @@ export default function App() {
 
 
     // 2. Processamento do Conteúdo Principal para Inserção Contextual
-    let textToDraw = text.replace(IMAGE_SUGGESTION_REGEX, '[IMG_HERE]');
-    const parts = textToDraw.split('[IMG_HERE]');
-    
+    let textToDraw = text; // Começa com o texto completo
+    let parts = [text]; // Assume que é uma única parte por padrão
+
+    const hasImageTag = IMAGE_SUGGESTION_REGEX.test(text);
+    const shouldInsertImage = imageUrl && hasImageTag;
+
+    if (shouldInsertImage) {
+        // Se temos imagem E a tag, substituímos por um placeholder e dividimos
+        textToDraw = text.replace(IMAGE_SUGGESTION_REGEX, '[IMG_HERE]');
+        parts = textToDraw.split('[IMG_HERE]');
+    } else if (hasImageTag) {
+        // Se a tag existe, mas NÃO há imagem (pularam o passo 2), removemos a tag completamente
+        textToDraw = text.replace(IMAGE_SUGGESTION_REGEX, '');
+        parts = [textToDraw];
+    }
+    // Se não há tag, 'parts' permanece como [text] e é desenhado normalmente.
+
     const textBeforeImage = parts[0];
     const textAfterImage = parts.length > 1 ? parts.slice(1).join('\n') : '';
 
@@ -194,7 +208,7 @@ export default function App() {
     drawTextBlock(doc, textBeforeImage, margin, pageHeight, usableWidth, lineHeight, paragraphSpacing, cursorY);
     
     // --- Parte B: Inserção Contextual da Imagem (se houver) ---
-    if (imageUrl && parts.length > 1) {
+    if (shouldInsertImage && parts.length > 1) { // Só insere se a imagem foi gerada e a divisão ocorreu
         
         // Verifica se a imagem cabe na página atual (incluindo margem para legenda)
         const imageWidth = usableWidth * 0.9; 
@@ -417,7 +431,7 @@ export default function App() {
             <CheckCircle2 className="w-10 h-10 text-green-600" />
           </div>
           <h2 className="text-3xl font-bold text-slate-800 mb-2">Seu Documento Está Pronto!</h2>
-          <p className="text-slate-600 mb-6">Use os botões abaixo. **A imagem será inserida automaticamente no ponto contextual que a IA sugeriu!**</p>
+          <p className="text-slate-600 mb-6">Siga os passos 1 e 2 para incluir a imagem contextualizada.</p>
           
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 text-left">
             {/* Bloco de Imagem */}
@@ -467,7 +481,7 @@ export default function App() {
             {/* Bloco de Conteúdo e PDF */}
             <div className="p-4 border border-slate-200 rounded-lg bg-slate-50">
               <h3 className="text-lg font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                 <FileText className="w-5 h-5 text-indigo-600" /> 2. Conteúdo e Download
+                 <FileText className="w-5 h-5 text-indigo-600" /> 2. Download Final
               </h3>
               <div className="bg-white p-4 rounded mb-4 h-48 overflow-y-auto text-left text-xs font-mono border border-slate-300 shadow-inner">
                 {generatedContent}
@@ -480,7 +494,7 @@ export default function App() {
                 className={`px-8 py-3 rounded-lg font-semibold flex items-center justify-center gap-2 w-full transition-colors shadow-lg ${pdfLibraryLoaded ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-slate-400 cursor-wait'} ${generatedImageURL ? 'border-2 border-green-300' : ''} text-white`}
               >
                 <Download className="w-5 h-5" /> 
-                {generatedImageURL ? 'Baixar PDF COM IMAGEM CONTEXTUAL' : 'Baixar PDF (Somente Texto)'}
+                {generatedImageURL ? 'Baixar PDF COM IMAGEM CONTEXTUAL' : 'Baixar PDF (Sem Imagem, Tag Removida)'}
               </button>
               
               <button onClick={() => setResultReady(false)} className="mt-4 text-indigo-600 hover:underline w-full">
