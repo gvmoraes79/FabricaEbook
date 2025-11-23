@@ -77,7 +77,6 @@ export default function App() {
   // --- Lógica de Geração de Imagem com Reintentos (Exponential Backoff) ---
   const generateImage = useCallback(async (promptForImage) => {
     setIsImageGenerating(true);
-    // IMPORTANTE: Removemos setImagePrompt daqui e colocamos em handleSubmit
     const maxRetries = 5;
     let currentRetry = 0;
 
@@ -267,10 +266,19 @@ export default function App() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    // Habilita o botão se a chave API estiver preenchida. 
+    // O tema só é necessário para a função de gerar o prompt, mas a chave é para a execução.
     if (!apiKey) {
       alert('Por favor, insira sua chave de API do Google Studio.');
       return;
     }
+    
+    // Verifica se o campo tema está preenchido, que é o mínimo para gerar conteúdo.
+    if (!formData.theme) {
+       alert('Por favor, insira um Tema / Título para começar.');
+       return;
+    }
+
 
     setIsProcessing(true);
     setResultReady(false);
@@ -441,26 +449,30 @@ export default function App() {
   // --- UI para Criação (Tela 1) ---
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 font-sans pb-12">
-      <header className="bg-white shadow-sm border-b border-indigo-100 sticky top-0 z-10">
+      <header className="bg-white shadow-sm border-b border-indigo-100">
         <div className="max-w-5xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-3 mb-4">
+          <div className="flex items-center gap-3">
             <div className="bg-indigo-600 p-2 rounded-lg"><BookOpen className="w-6 h-6 text-white" /></div>
             <h1 className="text-xl font-bold text-slate-800">AI eBook Studio <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded ml-2">Conectado ao Google Gemini</span></h1>
           </div>
-          
-          <div className="bg-slate-100 p-3 rounded-lg flex items-center gap-3 border border-slate-200">
-            <Key className="w-5 h-5 text-slate-500" />
+        </div>
+      </header>
+      
+      {/* Container Fixo para a Chave API - Movido para o Rodapé (discreto) */}
+      <div className="fixed bottom-0 right-0 m-4 p-3 bg-white shadow-2xl rounded-xl border border-slate-200 z-50 w-full max-w-sm">
+          <div className="flex items-center gap-3">
+            <Key className="w-5 h-5 text-indigo-600" />
             <input 
               type="password" 
-              placeholder="Cole sua Chave API do Google AI Studio aqui (Começa com AIza...)" 
-              className="bg-transparent flex-1 outline-none text-sm text-slate-700"
+              placeholder="Cole sua Chave API do Google AI Studio aqui (Obrigatório)" 
+              className="bg-transparent flex-1 outline-none text-sm text-slate-700 placeholder-slate-400"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
             />
           </div>
-          {!apiKey && <p className="text-xs text-red-500 mt-1 ml-1">* Obrigatório para funcionar</p>}
-        </div>
-      </header>
+      </div>
+      {/* Fim do Container Fixo */}
+
 
       {isProcessing ? (
         <div className="flex flex-col items-center justify-center h-[60vh]">
@@ -552,7 +564,13 @@ export default function App() {
                 <textarea name="notes" value={formData.notes} onChange={handleInputChange} rows="2" className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Ex: Usar linguagem simples, focar em exemplos..."></textarea>
               </div>
 
-              <button type="submit" disabled={!apiKey} className={`w-full py-4 rounded-xl font-bold text-white shadow-lg flex items-center justify-center gap-2 ${apiKey ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-slate-400 cursor-not-allowed'}`}>
+              <button 
+                type="submit" 
+                // CORREÇÃO: Habilita se a chave API estiver presente E o campo tema não estiver vazio.
+                disabled={!apiKey || !formData.theme} 
+                className={`w-full py-4 rounded-xl font-bold text-white shadow-lg flex items-center justify-center gap-2 
+                  ${(apiKey && formData.theme) ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-slate-400 cursor-not-allowed'}`}
+              >
                 <Wand2 className="w-5 h-5" /> {activeTab === 'create' ? 'Gerar com IA' : 'Revisar com IA'}
               </button>
             </form>
