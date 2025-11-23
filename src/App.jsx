@@ -147,8 +147,8 @@ export default function App() {
     
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
-      // Usando gemini-2.5-flash-preview-09-2025 para compatibilidade com o ambiente Canvas
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-preview-09-2025" });
+      // Usando gemini-2.5-flash para compatibilidade com o ambiente Canvas
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
       let prompt = "";
 
