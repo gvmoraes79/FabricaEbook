@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   BookOpen, Wand2, Upload, CheckCircle2, FileText, 
   Languages, Loader2, Settings2, Image as ImageIcon, 
-  Download, Key, AlertCircle 
+  Download, Key, AlertCircle, Eye, EyeOff
 } from 'lucide-react';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
@@ -18,6 +18,7 @@ export default function App() {
   const [resultReady, setResultReady] = useState(false);
   const [generatedContent, setGeneratedContent] = useState('');
   const [pdfLibraryLoaded, setPdfLibraryLoaded] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false); // Novo estado para exibir/ocultar API Key
 
   // Estados para a geração de imagem
   const [generatedImageURL, setGeneratedImageURL] = useState(null);
@@ -29,7 +30,7 @@ export default function App() {
     maxPages: 10,
     language: 'portugues',
     includeImages: false,
-    notes: '',
+    notes: '', // Este campo agora é usado como prompt manual para a imagem, se for o caso.
     revisionType: 'correcao',
     tone: 'manter',
     file: null,
@@ -77,6 +78,10 @@ export default function App() {
   // --- Lógica de Geração de Imagem com Reintentos (Exponential Backoff) ---
   const generateImage = useCallback(async (promptForImage) => {
     setIsImageGenerating(true);
+    
+    // Atualiza o status na tela de resultados
+    setStatusMessage('Conteúdo pronto. Iniciando geração da imagem de Capa (Imagen). Por favor, aguarde...');
+    
     const maxRetries = 5;
     let currentRetry = 0;
 
@@ -86,7 +91,7 @@ export default function App() {
           instances: [{ prompt: promptForImage }], 
           parameters: { "sampleCount": 1 } 
         };
-        // A chave API é garantida pela função handleSubmit
+        // A API key será injetada automaticamente, mas o código precisa do parâmetro.
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
 
         const response = await fetch(apiUrl, {
@@ -96,7 +101,8 @@ export default function App() {
         });
 
         if (!response.ok) {
-          throw new Error(`API returned status ${response.status}`);
+          const errorBody = await response.json().catch(() => ({}));
+          throw new Error(`API retornou status ${response.status}: ${errorBody.error?.message || response.statusText}`);
         }
 
         const result = await response.json();
@@ -106,7 +112,7 @@ export default function App() {
           const imageUrl = `data:image/png;base64,${base64Data}`;
           return imageUrl;
         } else {
-          throw new Error('No image data found in API response.');
+          throw new Error('Nenhum dado de imagem encontrado na resposta da API.');
         }
 
       } catch (error) {
@@ -114,23 +120,30 @@ export default function App() {
         if (currentRetry < maxRetries) {
           currentRetry++;
           const delay = Math.pow(2, currentRetry) * 1000;
-          setStatusMessage(`Tentando novamente gerar a imagem em ${delay / 1000}s... (Tentativa ${currentRetry}/${maxRetries})`);
+          setStatusMessage(`Erro temporário na imagem. Tentando novamente em ${delay / 1000}s... (Tentativa ${currentRetry}/${maxRetries})`);
           await new Promise(resolve => setTimeout(resolve, delay));
           return runGeneration(); 
         } else {
-          setStatusMessage('Falha ao gerar imagem após várias tentativas. Prosseguindo sem ela.');
-          return null; // Retorna null em caso de falha final
+          // A falha na imagem não bloqueia o resultado, mas atualiza o status
+          setStatusMessage(`Falha na geração da imagem após ${maxRetries} tentativas. Prosseguindo com capa textual.`);
+          return null; 
         }
       } 
     };
     
     const imageUrl = await runGeneration();
     setIsImageGenerating(false);
+    
+    // Se o statusMessage não foi atualizado por um erro, atualiza para sucesso
+    if (imageUrl && !statusMessage.startsWith('Falha')) {
+        setStatusMessage('Conteúdo e imagem de capa gerados com sucesso!');
+    }
+    
     return imageUrl;
-  }, [apiKey]);
+  }, [apiKey, statusMessage]);
 
 
-  // --- Lógica de Geração de PDF (Inclui Imagem na Capa, Limpa a Tag no Conteúdo) ---
+  // --- Lógica de Geração de PDF ---
   const drawTextBlock = (doc, text, margin, pageHeight, usableWidth, lineHeight, paragraphSpacing, cursorRef) => {
     const blocks = text.split('\n');
 
@@ -176,7 +189,7 @@ export default function App() {
   };
 
   const generatePDF = (text, title, imageUrl, imagePrompt) => {
-    if (!window.jspdf) return;
+    if (!window.jspdf || !title) return; // Garante que o título existe para o nome do arquivo
 
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
@@ -187,11 +200,11 @@ export default function App() {
     const lineHeight = 7; 
     const paragraphSpacing = 3; 
     const cursorY = { current: margin }; 
-    const imagePlaceholderText = "Para uma capa profissional, gere uma imagem e insira-a aqui."; // Texto para capa sem imagem
+    const imagePlaceholderText = "Para uma capa profissional, gere uma imagem e insira-a aqui."; 
 
     // --- Capa (Primeira Página) ---
     doc.setFont("helvetica", "bold"); doc.setFontSize(36); 
-    doc.setTextColor(50, 50, 50); // Cor mais escura
+    doc.setTextColor(50, 50, 50); 
     
     // Título Principal
     doc.text(title, pageWidth / 2, pageHeight / 2 - 60, { align: 'center' }); 
@@ -200,16 +213,14 @@ export default function App() {
     doc.setFont("helvetica", "italic"); doc.setFontSize(16);
     doc.text("Por: Escritor Artificial", pageWidth / 2, pageHeight / 2 - 45, { align: 'center' }); 
 
-    // Imagem na Capa, se existir (Implementação da Capa Ilustrada)
+    // Imagem na Capa, se existir
     if (imageUrl) {
         const coverImageWidth = usableWidth;
-        // Ajusta a altura da imagem para não preencher a capa toda
         const coverImageHeight = coverImageWidth * 0.7; 
         const coverImageX = margin;
-        const coverImageY = pageHeight / 2 - 30; // Posição abaixo do título
+        const coverImageY = pageHeight / 2 - 30; 
 
         try {
-            // A imagem deve ser um URL base64, que funciona com addImage
             doc.addImage(imageUrl, 'PNG', coverImageX, coverImageY, coverImageWidth, coverImageHeight);
             
             // Créditos da imagem
@@ -238,7 +249,7 @@ export default function App() {
     cursorY.current = margin; 
 
     // --- Processamento do Conteúdo (Limpeza da Tag de Imagem) ---
-    // Remove a tag de sugestão de imagem do corpo do texto, já que ela foi para a capa.
+    // Remove a tag de sugestão de imagem do corpo do texto.
     let textToDraw = text; 
     textToDraw = textToDraw.replace(IMAGE_SUGGESTION_REGEX, ''); 
 
@@ -258,7 +269,8 @@ export default function App() {
       doc.text(`AI eBook Studio`, margin, pageHeight - 15);
     }
 
-    doc.save(`${title.replace(/\s+/g, '_')}.pdf`);
+    // Usar o título para o nome do arquivo
+    doc.save(`${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_ebook.pdf`);
   };
 
 
@@ -266,55 +278,106 @@ export default function App() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Habilita o botão se a chave API estiver preenchida. 
-    // O tema só é necessário para a função de gerar o prompt, mas a chave é para a execução.
     if (!apiKey) {
       alert('Por favor, insira sua chave de API do Google Studio.');
       return;
     }
     
-    // Verifica se o campo tema está preenchido, que é o mínimo para gerar conteúdo.
     if (!formData.theme) {
        alert('Por favor, insira um Tema / Título para começar.');
        return;
     }
 
-
     setIsProcessing(true);
     setResultReady(false);
-    setGeneratedImageURL(null); // Limpa imagem anterior
-    setImagePrompt(''); // Limpa prompt anterior
+    setGeneratedImageURL(null); 
+    setImagePrompt(''); 
     
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
+      // Usando gemini-2.5-flash para melhor velocidade e capacidade de seguir instruções
       const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
       // 1. Geração do Prompt
       let prompt = "";
-      const imageInstruction = formData.includeImages ? 
-          "INSTRUÇÃO OBRIGATÓRIA: O usuário deseja a imagem. Inclua UMA ÚNICA sugestão visual detalhada no texto, exatamente no parágrafo onde ela deve aparecer, marcada exatamente assim: [SUGESTÃO DE IMAGEM: descrição da cena]." : 
-          "Não inclua sugestões de imagens.";
+      let imagePromptForGenerator = null;
+      let notesText = formData.notes.trim();
 
-      if (activeTab === 'create') {
-        // --- PROMPT MODIFICADO PARA INCLUIR REFERÊNCIAS E ÍNDICE ---
-        prompt = `Atue como um escritor profissional. Escreva um ebook completo sobre o tema: "${formData.theme}".
-          **MANDATÓRIO: Comece o seu texto com um índice detalhado dos capítulos e subcapítulos.**
-          **MANDATÓRIO: Ao final do documento, inclua uma seção chamada "Referências Sugeridas" com 3 referências bibliográficas relevantes, utilizando um formato de lista.**
-          Idioma: ${formData.language}.
-          Público-alvo/Obs: ${formData.notes}.
-          O ebook deve ser detalhado, ter uma introdução, vários capítulos bem desenvolvidos e uma conclusão.
-          Tamanho estimado de conteúdo: equivalente a entre ${formData.minPages} e ${formData.maxPages} páginas de leitura.
-          Use formatação clara com Títulos (use ## para títulos principais) e Parágrafos.
-          ${imageInstruction}`;
-        // -----------------------------------------------------------
+      // Determine a estratégia de imagem
+      if (formData.includeImages) {
+          if (notesText) {
+              // Estratégia A: Usuário forneceu Observações. Usamos as Observações como prompt da imagem.
+              imagePromptForGenerator = notesText;
+              setImagePrompt(imagePromptForGenerator); 
+              
+              const notesInstruction = `O usuário forneceu observações: "${notesText}". Use-as para guiar o texto (público, tom, estilo). **NÃO** inclua o tag [SUGESTÃO DE IMAGEM: ...]. A imagem de capa será gerada separadamente usando estas observações.`;
+              
+              if (activeTab === 'create') {
+                prompt = `Atue como um escritor profissional. Escreva um ebook completo sobre o tema: "${formData.theme}".
+                    **MANDATÓRIO: Comece o seu texto com um índice detalhado dos capítulos e subcapítulos.**
+                    **MANDATÓRIO: Ao final do documento, inclua uma seção chamada "Referências Sugeridas" com 3 referências bibliográficas relevantes, utilizando um formato de lista.**
+                    Idioma: ${formData.language}.
+                    O ebook deve ser detalhado, ter uma introdução, vários capítulos bem desenvolvidos e uma conclusão.
+                    Tamanho estimado de conteúdo: equivalente a entre ${formData.minPages} e ${formData.maxPages} páginas de leitura.
+                    Use formatação clara com Títulos (use ## para títulos principais) e Parágrafos.
+                    ${notesInstruction}`;
+              } else {
+                 const contentToRevise = formData.textContent || "O usuário não carregou um texto legível, por favor crie um exemplo de revisão sobre: " + formData.theme;
+                 prompt = `Atue como um editor chefe. Revise o seguinte texto.
+                    Objetivo: ${formData.revisionType}.
+                    Tom de voz desejado: ${formData.tone}.
+                    Idioma de saída: ${formData.language}.
+                    ${notesInstruction}
+                    Texto original para trabalhar: "${contentToRevise.substring(0, 10000)}"`;
+              }
+
+
+          } else {
+              // Estratégia B: Observações vazias. Pedimos à IA para gerar a tag de sugestão de imagem no texto.
+              const imageInstruction = "INSTRUÇÃO OBLIGATÓRIA: O usuário deseja a imagem. Inclua UMA ÚNICA sugestão visual detalhada no texto, exatamente no parágrafo onde ela deve aparecer, marcada exatamente assim: [SUGESTÃO DE IMAGEM: descrição da cena].";
+              
+              if (activeTab === 'create') {
+                prompt = `Atue como um escritor profissional. Escreva um ebook completo sobre o tema: "${formData.theme}".
+                    **MANDATÓRIO: Comece o seu texto com um índice detalhado dos capítulos e subcapítulos.**
+                    **MANDATÓRIO: Ao final do documento, inclua uma seção chamada "Referências Sugeridas" com 3 referências bibliográficas relevantes, utilizando um formato de lista.**
+                    Idioma: ${formData.language}.
+                    O ebook deve ser detalhado, ter uma introdução, vários capítulos bem desenvolvidos e uma conclusão.
+                    Tamanho estimado de conteúdo: equivalente a entre ${formData.minPages} e ${formData.maxPages} páginas de leitura.
+                    Use formatação clara com Títulos (use ## para títulos principais) e Parágrafos.
+                    ${imageInstruction}`;
+              } else {
+                 const contentToRevise = formData.textContent || "O usuário não carregou um texto legível, por favor crie um exemplo de revisão sobre: " + formData.theme;
+                 prompt = `Atue como um editor chefe. Revise o seguinte texto.
+                    Objetivo: ${formData.revisionType}.
+                    Tom de voz desejado: ${formData.tone}.
+                    Idioma de saída: ${formData.language}.
+                    ${imageInstruction}
+                    Texto original para trabalhar: "${contentToRevise.substring(0, 10000)}"`;
+              }
+          }
       } else {
-        const contentToRevise = formData.textContent || "O usuário não carregou um texto legível, por favor crie um exemplo de revisão sobre: " + formData.theme;
-        prompt = `Atue como um editor chefe. Revise o seguinte texto.
-          Objetivo: ${formData.revisionType}.
-          Tom de voz desejado: ${formData.tone}.
-          Idioma de saída: ${formData.language}.
-          ${imageInstruction}
-          Texto original para trabalhar: "${contentToRevise.substring(0, 10000)}"`;
+          // Estratégia C: Nenhuma imagem solicitada. Prompt padrão.
+          const notesPart = activeTab === 'create' ? `Público-alvo/Obs: ${formData.notes}.` : `Observações: ${formData.notes}.`;
+          
+          if (activeTab === 'create') {
+            prompt = `Atue como um escritor profissional. Escreva um ebook completo sobre o tema: "${formData.theme}".
+                **MANDATÓRIO: Comece o seu texto com um índice detalhado dos capítulos e subcapítulos.**
+                **MANDATÓRIO: Ao final do documento, inclua uma seção chamada "Referências Sugeridas" com 3 referências bibliográficas relevantes, utilizando um formato de lista.**
+                Idioma: ${formData.language}.
+                ${notesPart}
+                O ebook deve ser detalhado, ter uma introdução, vários capítulos bem desenvolvidos e uma conclusão.
+                Tamanho estimado de conteúdo: equivalente a entre ${formData.minPages} e ${formData.maxPages} páginas de leitura.
+                Use formatação clara com Títulos (use ## para títulos principais) e Parágrafos.
+                Não inclua sugestões de imagens.`;
+          } else {
+             const contentToRevise = formData.textContent || "O usuário não carregou um texto legível, por favor crie um exemplo de revisão sobre: " + formData.theme;
+             prompt = `Atue como um editor chefe. Revise o seguinte texto.
+                Objetivo: ${formData.revisionType}.
+                Tom de voz desejado: ${formData.tone}.
+                Idioma de saída: ${formData.language}.
+                Não inclua sugestões de imagens.
+                Texto original para trabalhar: "${contentToRevise.substring(0, 10000)}"`;
+          }
       }
       
       // 2. Chamada Gemini (Texto)
@@ -322,31 +385,32 @@ export default function App() {
       const result = await model.generateContent(prompt);
       const text = result.response.text();
       setGeneratedContent(text);
-
-      // 3. Chamada Imagen (Imagem) - AUTO-GERAÇÃO
+      setResultReady(true); // Prepara a transição para a tela de resultados
+      
+      // 3. Chamada Imagen (Imagem) - Execução
       if (formData.includeImages) {
-          const match = text.match(IMAGE_SUGGESTION_REGEX);
-          if (match && match[1]) {
-              // Usamos o prompt do texto como base para a imagem da capa
-              const promptForImage = match[1].trim(); 
-              
-              // >>>>> CORREÇÃO DE BUG: Definir o prompt da imagem no estado AQUI <<<<<
-              setImagePrompt(promptForImage); 
-              
-              setStatusMessage(`Passo 2/2: Conteúdo pronto. Iniciando geração AUTOMÁTICA da imagem para a Capa: "${promptForImage}"...`);
-              
-              // Chama a função de geração de imagem e espera
-              const imageUrl = await generateImage(promptForImage); 
+          
+          // Se imagePromptForGenerator ainda não está setado (Estratégia B), tentamos extrair o tag da IA.
+          if (!imagePromptForGenerator) {
+              const match = text.match(IMAGE_SUGGESTION_REGEX);
+              if (match && match[1]) {
+                  imagePromptForGenerator = match[1].trim(); 
+                  setImagePrompt(imagePromptForGenerator); 
+              } 
+          }
+
+          // Se tivermos um prompt (seja das notas ou extraído do texto)
+          if (imagePromptForGenerator) {
+              // Já está na tela de resultados, o componente irá exibir o Loader2
+              const imageUrl = await generateImage(imagePromptForGenerator); 
               
               if (imageUrl) {
                   setGeneratedImageURL(imageUrl);
-                  setStatusMessage('Conteúdo e imagem de capa gerados com sucesso!');
-              } else {
-                  // O generateImage já define uma mensagem de erro, mas ajustamos o status final
-                  setStatusMessage('Conteúdo pronto. Falha ao gerar imagem automaticamente. Prossiga com o PDF sem ela.');
-              }
+              } 
+              // Se falhar, o statusMessage já foi atualizado dentro de generateImage
+
           } else {
-               setStatusMessage('Conteúdo pronto. Nenhuma sugestão de imagem encontrada no texto. Prossiga sem ela.');
+               setStatusMessage('Conteúdo pronto. Nenhuma sugestão de imagem foi encontrada no texto ou nas observações.');
           }
       } else {
         setStatusMessage('Conteúdo pronto. Prossiga para a tela de download.');
@@ -354,13 +418,12 @@ export default function App() {
       
       // 4. Conclusão
       setIsProcessing(false);
-      setResultReady(true);
 
     } catch (error) {
       console.error(error);
       const errorMsg = error.message.includes('API key') ? 
         'Erro de autenticação. Verifique sua Chave API.' : 
-        'Erro desconhecido. Verifique o console.';
+        'Erro desconhecido. O erro pode ser de conteúdo ou na comunicação da API. Verifique o console do navegador para detalhes.';
         
       setStatusMessage(`Erro: ${errorMsg}`);
       setIsProcessing(false);
@@ -377,42 +440,44 @@ export default function App() {
             <CheckCircle2 className="w-10 h-10 text-green-600" />
           </div>
           <h2 className="text-3xl font-bold text-slate-800 mb-2">Documento Finalizado!</h2>
-          <p className="text-slate-600 mb-6 font-semibold">{statusMessage}</p>
+          {/* Exibe o status atualizado, seja de sucesso ou da geração de imagem */}
+          <p className="text-slate-600 mb-6 font-semibold">{statusMessage}</p> 
           
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 text-left">
-            {/* Bloco de Imagem - Agora com Geração AUTOMÁTICA */}
+            {/* Bloco de Imagem */}
             <div className="p-4 border border-slate-200 rounded-lg bg-slate-50">
               <h3 className="text-lg font-semibold text-slate-700 mb-3 flex items-center gap-2">
                 <ImageIcon className="w-5 h-5 text-indigo-600" /> Imagem de Capa
               </h3>
               
               {imagePrompt && (
-                <p className="text-sm text-slate-600 mb-3 border-l-4 border-indigo-400 pl-2">
-                  Prompt Utilizado para a Capa: 
-                  <span className="font-mono text-xs block mt-1 bg-white p-2 rounded">{imagePrompt}</span>
-                </p>
+                <div className="text-sm text-slate-600 mb-3 border-l-4 border-indigo-400 pl-2">
+                  <p className="font-semibold">Prompt Utilizado para a Imagem:</p>
+                  <span className="font-mono text-xs block mt-1 bg-white p-2 rounded break-words">{imagePrompt}</span>
+                </div>
               )}
               
-              {generatedImageURL ? (
+              {isImageGenerating ? (
+                <div className="h-48 flex items-center justify-center bg-indigo-50 rounded-lg border border-indigo-200">
+                  <div className="text-center">
+                     <Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-600 mb-2" />
+                     <p className="text-sm text-slate-700">Aguardando a conclusão da geração da imagem...</p>
+                     <p className="text-xs text-slate-500 mt-1">O texto já está pronto, mas a imagem pode levar mais alguns segundos.</p>
+                  </div>
+                </div>
+              ) : generatedImageURL ? (
                 <img 
                   src={generatedImageURL} 
                   alt="Imagem gerada por IA" 
                   className="w-full h-auto rounded-lg shadow-lg border border-slate-300" 
                 />
               ) : (
-                <div className="h-48 flex items-center justify-center bg-slate-200 rounded-lg">
-                  {isImageGenerating ? (
-                    <div className="text-center">
-                       <Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-600 mb-2" />
-                       <p className="text-sm text-slate-700">Aguardando a conclusão da geração...</p>
-                    </div>
-                  ) : (
-                    <div className="text-center text-slate-500">
-                        <AlertCircle className="w-8 h-8 mx-auto mb-2" />
-                        <p className="text-sm">Nenhuma imagem gerada para a capa.</p>
-                        <p className="text-xs mt-1">(O PDF terá uma capa apenas textual.)</p>
-                    </div>
-                  )}
+                <div className="h-48 flex items-center justify-center bg-red-50 rounded-lg border border-red-200">
+                  <div className="text-center text-red-700">
+                      <AlertCircle className="w-8 h-8 mx-auto mb-2" />
+                      <p className="text-sm font-semibold">Capa Textual.</p>
+                      <p className="text-xs mt-1">Nenhuma imagem gerada (falha na IA ou não solicitada).</p>
+                  </div>
                 </div>
               )}
             </div>
@@ -458,30 +523,19 @@ export default function App() {
         </div>
       </header>
       
-      {/* Container Fixo para a Chave API - Movido para o Rodapé (discreto) */}
-      <div className="fixed bottom-0 right-0 m-4 p-3 bg-white shadow-2xl rounded-xl border border-slate-200 z-50 w-full max-w-sm">
-          <div className="flex items-center gap-3">
-            <Key className="w-5 h-5 text-indigo-600" />
-            <input 
-              type="password" 
-              placeholder="Cole sua Chave API do Google AI Studio aqui (Obrigatório)" 
-              className="bg-transparent flex-1 outline-none text-sm text-slate-700 placeholder-slate-400"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-            />
+      <main className="max-w-3xl mx-auto px-4 py-8">
+        
+        {isProcessing && (
+          <div className="fixed inset-0 bg-white/70 backdrop-blur-sm flex items-center justify-center z-[100]">
+            <div className="bg-white p-8 rounded-xl shadow-2xl text-center border-t-4 border-indigo-600">
+              <Loader2 className="w-10 h-10 animate-spin text-indigo-600 mx-auto mb-4" />
+              <h3 className="text-lg font-bold text-slate-800 mb-2">Processando Documento...</h3>
+              <p className="text-slate-600 font-medium">{statusMessage}</p>
+              <p className="text-sm text-slate-500 mt-2">Por favor, não feche esta janela.</p>
+            </div>
           </div>
-      </div>
-      {/* Fim do Container Fixo */}
-
-
-      {isProcessing ? (
-        <div className="flex flex-col items-center justify-center h-[60vh]">
-          <Loader2 className="w-16 h-16 animate-spin mb-6 text-indigo-600" />
-          <h2 className="text-2xl font-bold text-slate-700 mb-2">Aguarde...</h2>
-          <p className="text-slate-500 animate-pulse">{statusMessage}</p>
-        </div>
-      ) : (
-        <main className="max-w-3xl mx-auto px-4 py-8">
+        )}
+        
           <div className="bg-white p-1 rounded-xl shadow-sm border border-slate-200 flex mb-8">
             <button onClick={() => setActiveTab('create')} className={`flex-1 py-3 px-4 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${activeTab === 'create' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-50'}`}>
               <Wand2 className="w-4 h-4" /> Criar do Zero
@@ -537,7 +591,7 @@ export default function App() {
                    </div>
                 )}
               </div>
-
+              
               {/* Checkbox de Imagens */}
               <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-100 flex items-center gap-3">
                 <div className="bg-white p-2 rounded-md shadow-sm">
@@ -545,9 +599,9 @@ export default function App() {
                 </div>
                 <div className="flex-1">
                   <label htmlFor="ai-images" className="font-medium text-slate-800 cursor-pointer select-none">
-                    Incluir Imagens Ilustrativas?
+                    Incluir Imagem de Capa Gerada por IA?
                   </label>
-                  <p className="text-xs text-slate-500">Se marcada, a IA gerará automaticamente a imagem para a capa e a removerá do corpo do texto.</p>
+                  <p className="text-xs text-slate-500">Se marcada, a IA criará uma imagem para a capa (baseada nas Observações ou em uma sugestão do texto).</p>
                 </div>
                 <input 
                   type="checkbox" 
@@ -560,13 +614,12 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Observações para a IA</label>
-                <textarea name="notes" value={formData.notes} onChange={handleInputChange} rows="2" className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Ex: Usar linguagem simples, focar em exemplos..."></textarea>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Observações para a IA <span className="text-xs text-red-500 font-normal">(Se você marcou 'Incluir Imagem', este texto será o prompt da capa)</span></label>
+                <textarea name="notes" value={formData.notes} onChange={handleInputChange} rows="2" className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Ex: Usar linguagem simples, focar em exemplos. Descreva a imagem de capa aqui se for usá-la."></textarea>
               </div>
 
               <button 
                 type="submit" 
-                // CORREÇÃO: Habilita se a chave API estiver presente E o campo tema não estiver vazio.
                 disabled={!apiKey || !formData.theme} 
                 className={`w-full py-4 rounded-xl font-bold text-white shadow-lg flex items-center justify-center gap-2 
                   ${(apiKey && formData.theme) ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-slate-400 cursor-not-allowed'}`}
@@ -575,8 +628,29 @@ export default function App() {
               </button>
             </form>
           </div>
-        </main>
-      )}
+      </main>
+      
+      {/* Container Fixo para a Chave API (Canto Inferior Direito) */}
+      <div className="fixed bottom-0 right-0 m-4 p-2 bg-white shadow-2xl rounded-xl border border-slate-200 z-[100] w-full max-w-xs transition-opacity hover:opacity-100 opacity-90">
+          <div className="flex items-center gap-2">
+            
+            <input 
+              type={showApiKey ? "text" : "password"} 
+              placeholder="Chave API Google (Cole Aqui)" 
+              className="bg-transparent flex-1 outline-none text-xs text-slate-700 placeholder-slate-400"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+            />
+            <button 
+              type="button"
+              onClick={() => setShowApiKey(!showApiKey)}
+              className="text-slate-500 hover:text-indigo-600 p-1 rounded transition-colors"
+              title={showApiKey ? "Ocultar Chave" : "Exibir Chave"}
+            >
+              {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+      </div>
     </div>
   );
 }
