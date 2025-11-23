@@ -9,6 +9,18 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 // Regex para encontrar a primeira sugestão de imagem no texto e capturar a descrição
 const IMAGE_SUGGESTION_REGEX = /\[SUGESTÃO DE IMAGEM: (.*?)]/i;
 
+// Frases bem-humoradas para a tela de carregamento
+const loadingPhrases = [
+  "Calma! Pra quê essa pressa toda?",
+  "A IA está pensando na vida... e no seu livro!",
+  "Tomando um cafézinho virtual para inspirar a IA...",
+  "Estamos traduzindo seu prompt para a linguagem da matrix. Segura a ansiedade!",
+  "Quase lá! Seu eBook está saindo do forno digital...",
+  "A capa está recebendo um toque de genialidade. Isso leva tempo!",
+  "Verificando se as referências estão corretas (ou inventando umas boas!).",
+  "Aguarde. A criatividade artificial está no máximo."
+];
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('create');
   const [apiKey, setApiKey] = useState('');
@@ -18,7 +30,10 @@ export default function App() {
   const [resultReady, setResultReady] = useState(false);
   const [generatedContent, setGeneratedContent] = useState('');
   const [pdfLibraryLoaded, setPdfLibraryLoaded] = useState(false);
-  const [showApiKey, setShowApiKey] = useState(false); // Novo estado para exibir/ocultar API Key
+  const [showApiKey, setShowApiKey] = useState(false); 
+  
+  // Novo estado para a frase de carregamento bem-humorada
+  const [currentJoke, setCurrentJoke] = useState(loadingPhrases[0]); 
 
   // Estados para a geração de imagem
   const [generatedImageURL, setGeneratedImageURL] = useState(null);
@@ -30,7 +45,7 @@ export default function App() {
     maxPages: 10,
     language: 'portugues',
     includeImages: false,
-    notes: '', // Este campo agora é usado como prompt manual para a imagem, se for o caso.
+    notes: '', 
     revisionType: 'correcao',
     tone: 'manter',
     file: null,
@@ -38,6 +53,28 @@ export default function App() {
   });
 
   // --- Funções de Inicialização e Handlers ---
+
+  // Efeito para ciclar as frases de carregamento
+  useEffect(() => {
+    let intervalId;
+    if (isProcessing) {
+      // Começa com uma frase aleatória
+      const initialIndex = Math.floor(Math.random() * loadingPhrases.length);
+      setCurrentJoke(loadingPhrases[initialIndex]);
+
+      // Cicla a cada 5 segundos
+      intervalId = setInterval(() => {
+        const randomIndex = Math.floor(Math.random() * loadingPhrases.length);
+        setCurrentJoke(loadingPhrases[randomIndex]);
+      }, 5000); 
+    }
+    // Limpa o timer quando o processamento terminar
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [isProcessing]); // Dependência de isProcessing
 
   // Carrega a biblioteca de PDF automaticamente via CDN
   useEffect(() => {
@@ -75,24 +112,30 @@ export default function App() {
     }
   };
 
-  // --- Lógica de Geração de Imagem com Reintentos (Exponential Backoff) ---
+  // --- Lógica de Geração de Imagem com Nano Banana ---
   const generateImage = useCallback(async (promptForImage) => {
     setIsImageGenerating(true);
     
-    // Atualiza o status na tela de resultados
-    setStatusMessage('Conteúdo pronto. Iniciando geração da imagem de Capa (Imagen). Por favor, aguarde...');
+    // Atualiza o status na tela de resultados (Não usamos o currentJoke aqui)
+    setStatusMessage('Conteúdo pronto. Iniciando geração da imagem de Capa (Nano Banana). Por favor, aguarde...');
     
     const maxRetries = 5;
     let currentRetry = 0;
 
     const runGeneration = async () => {
       try {
-        const payload = { 
-          instances: [{ prompt: promptForImage }], 
-          parameters: { "sampleCount": 1 } 
+        
+        // Configuração do Payload para o modelo gemini-2.5-flash-image-preview
+        const payload = {
+            contents: [{
+                parts: [{ text: promptForImage }]
+            }],
+            generationConfig: {
+                responseModalities: ['TEXT', 'IMAGE']
+            },
         };
-        // A API key será injetada automaticamente, mas o código precisa do parâmetro.
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
+        
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`;
 
         const response = await fetch(apiUrl, {
           method: 'POST',
@@ -106,13 +149,15 @@ export default function App() {
         }
 
         const result = await response.json();
-        const base64Data = result.predictions?.[0]?.bytesBase64Encoded;
+        
+        const base64Data = result?.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
 
         if (base64Data) {
           const imageUrl = `data:image/png;base64,${base64Data}`;
           return imageUrl;
         } else {
-          throw new Error('Nenhum dado de imagem encontrado na resposta da API.');
+          console.error("Nano Banana API retornou status OK, mas sem dados de imagem. Resposta completa:", result);
+          throw new Error('A API Nano Banana não retornou dados de imagem (pode ser bloqueio por política ou prompt muito vago).');
         }
 
       } catch (error) {
@@ -120,11 +165,11 @@ export default function App() {
         if (currentRetry < maxRetries) {
           currentRetry++;
           const delay = Math.pow(2, currentRetry) * 1000;
+          // Mensagem de status técnica para o console e para o usuário
           setStatusMessage(`Erro temporário na imagem. Tentando novamente em ${delay / 1000}s... (Tentativa ${currentRetry}/${maxRetries})`);
           await new Promise(resolve => setTimeout(resolve, delay));
           return runGeneration(); 
         } else {
-          // A falha na imagem não bloqueia o resultado, mas atualiza o status
           setStatusMessage(`Falha na geração da imagem após ${maxRetries} tentativas. Prosseguindo com capa textual.`);
           return null; 
         }
@@ -134,7 +179,6 @@ export default function App() {
     const imageUrl = await runGeneration();
     setIsImageGenerating(false);
     
-    // Se o statusMessage não foi atualizado por um erro, atualiza para sucesso
     if (imageUrl && !statusMessage.startsWith('Falha')) {
         setStatusMessage('Conteúdo e imagem de capa gerados com sucesso!');
     }
@@ -189,7 +233,7 @@ export default function App() {
   };
 
   const generatePDF = (text, title, imageUrl, imagePrompt) => {
-    if (!window.jspdf || !title) return; // Garante que o título existe para o nome do arquivo
+    if (!window.jspdf || !title) return; 
 
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
@@ -249,7 +293,6 @@ export default function App() {
     cursorY.current = margin; 
 
     // --- Processamento do Conteúdo (Limpeza da Tag de Imagem) ---
-    // Remove a tag de sugestão de imagem do corpo do texto.
     let textToDraw = text; 
     textToDraw = textToDraw.replace(IMAGE_SUGGESTION_REGEX, ''); 
 
@@ -270,7 +313,8 @@ export default function App() {
     }
 
     // Usar o título para o nome do arquivo
-    doc.save(`${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_ebook.pdf`);
+    const safeTitle = title.replace(/[^a-z0-9]/gi, '_').toLowerCase().substring(0, 50); 
+    doc.save(`${safeTitle}_ebook.pdf`);
   };
 
 
@@ -295,7 +339,6 @@ export default function App() {
     
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
-      // Usando gemini-2.5-flash para melhor velocidade e capacidade de seguir instruções
       const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
       // 1. Geração do Prompt
@@ -306,7 +349,6 @@ export default function App() {
       // Determine a estratégia de imagem
       if (formData.includeImages) {
           if (notesText) {
-              // Estratégia A: Usuário forneceu Observações. Usamos as Observações como prompt da imagem.
               imagePromptForGenerator = notesText;
               setImagePrompt(imagePromptForGenerator); 
               
@@ -333,7 +375,6 @@ export default function App() {
 
 
           } else {
-              // Estratégia B: Observações vazias. Pedimos à IA para gerar a tag de sugestão de imagem no texto.
               const imageInstruction = "INSTRUÇÃO OBLIGATÓRIA: O usuário deseja a imagem. Inclua UMA ÚNICA sugestão visual detalhada no texto, exatamente no parágrafo onde ela deve aparecer, marcada exatamente assim: [SUGESTÃO DE IMAGEM: descrição da cena].";
               
               if (activeTab === 'create') {
@@ -356,7 +397,6 @@ export default function App() {
               }
           }
       } else {
-          // Estratégia C: Nenhuma imagem solicitada. Prompt padrão.
           const notesPart = activeTab === 'create' ? `Público-alvo/Obs: ${formData.notes}.` : `Observações: ${formData.notes}.`;
           
           if (activeTab === 'create') {
@@ -385,12 +425,11 @@ export default function App() {
       const result = await model.generateContent(prompt);
       const text = result.response.text();
       setGeneratedContent(text);
-      setResultReady(true); // Prepara a transição para a tela de resultados
+      setResultReady(true); 
       
-      // 3. Chamada Imagen (Imagem) - Execução
+      // 3. Chamada Nano Banana (Imagem) - Execução
       if (formData.includeImages) {
           
-          // Se imagePromptForGenerator ainda não está setado (Estratégia B), tentamos extrair o tag da IA.
           if (!imagePromptForGenerator) {
               const match = text.match(IMAGE_SUGGESTION_REGEX);
               if (match && match[1]) {
@@ -399,18 +438,14 @@ export default function App() {
               } 
           }
 
-          // Se tivermos um prompt (seja das notas ou extraído do texto)
           if (imagePromptForGenerator) {
-              // Já está na tela de resultados, o componente irá exibir o Loader2
               const imageUrl = await generateImage(imagePromptForGenerator); 
               
               if (imageUrl) {
                   setGeneratedImageURL(imageUrl);
               } 
-              // Se falhar, o statusMessage já foi atualizado dentro de generateImage
-
           } else {
-               setStatusMessage('Conteúdo pronto. Nenhuma sugestão de imagem foi encontrada no texto ou nas observações.');
+               setStatusMessage('Conteúdo pronto. Nenhuma sugestão de imagem foi encontrada no texto ou nas observações. Capa Textual.');
           }
       } else {
         setStatusMessage('Conteúdo pronto. Prossiga para a tela de download.');
@@ -440,7 +475,6 @@ export default function App() {
             <CheckCircle2 className="w-10 h-10 text-green-600" />
           </div>
           <h2 className="text-3xl font-bold text-slate-800 mb-2">Documento Finalizado!</h2>
-          {/* Exibe o status atualizado, seja de sucesso ou da geração de imagem */}
           <p className="text-slate-600 mb-6 font-semibold">{statusMessage}</p> 
           
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 text-left">
@@ -513,7 +547,7 @@ export default function App() {
 
   // --- UI para Criação (Tela 1) ---
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 font-sans pb-12">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 font-sans pb-20">
       <header className="bg-white shadow-sm border-b border-indigo-100">
         <div className="max-w-5xl mx-auto px-4 py-4">
           <div className="flex items-center gap-3">
@@ -530,7 +564,8 @@ export default function App() {
             <div className="bg-white p-8 rounded-xl shadow-2xl text-center border-t-4 border-indigo-600">
               <Loader2 className="w-10 h-10 animate-spin text-indigo-600 mx-auto mb-4" />
               <h3 className="text-lg font-bold text-slate-800 mb-2">Processando Documento...</h3>
-              <p className="text-slate-600 font-medium">{statusMessage}</p>
+              {/* Usa a frase bem-humorada aqui */}
+              <p className="text-slate-600 font-medium">{currentJoke}</p> 
               <p className="text-sm text-slate-500 mt-2">Por favor, não feche esta janela.</p>
             </div>
           </div>
@@ -631,9 +666,9 @@ export default function App() {
       </main>
       
       {/* Container Fixo para a Chave API (Canto Inferior Direito) */}
-      <div className="fixed bottom-0 right-0 m-4 p-2 bg-white shadow-2xl rounded-xl border border-slate-200 z-[100] w-full max-w-xs transition-opacity hover:opacity-100 opacity-90">
+      <div className="fixed bottom-4 right-4 p-2 bg-white shadow-2xl rounded-xl border border-slate-200 z-[100] w-full max-w-xs transition-opacity hover:opacity-100 opacity-90">
           <div className="flex items-center gap-2">
-            
+            <Key className="w-4 h-4 text-slate-500" />
             <input 
               type={showApiKey ? "text" : "password"} 
               placeholder="Chave API Google (Cole Aqui)" 
