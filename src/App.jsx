@@ -1,735 +1,201 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  BookOpen, Wand2, Upload, CheckCircle2, FileText, 
-  Loader2, Image as ImageIcon, Download, 
-  Key, AlertCircle, Eye, EyeOff, Lightbulb
-} from 'lucide-react';
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import React, { useState, useCallback } from 'react';
+import { Sparkles, Image, Loader2, ArrowRight } from 'lucide-react';
 
-// Regex para encontrar a primeira sugestão de imagem no texto e capturar a descrição
-const IMAGE_SUGGESTION_REGEX = /\[SUGESTÃO DE IMAGEM: (.*?)]/i;
+// Chave da API: Vazia para que o Canvas possa fornecê-la em tempo de execução
+const apiKey = "";
+// URL da API para o modelo de geração de imagem (preferencial)
+const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
 
-// Frases bem-humoradas e piadas para a tela de carregamento
-const loadingPhrases = [
-  "O que é, o que é: Feito para andar, mas não anda? (A rua)",
-  "Piada de pontinho: O pontinho vermelho subiu no muro e caiu. Por quê? (Porque ele estava maduro!)",
-  "Por que a aranha não lava a louça? (Porque ela tem medo de prato!)",
-  "O que o tomate foi fazer no banco? (Foi tirar extrato!)",
-  "Calma! Pra quê essa pressa toda? A IA está lendo piadas de 'o que é, o que é'...",
-  "A IA está pensando na vida... e no seu livro!",
-  "Tomando um cafézinho virtual para inspirar a IA...",
-  "Estamos traduzindo seu prompt para a linguagem da matrix. Segura a ansiedade!",
-  "Quase lá! Seu eBook está saindo do forno digital...",
-  "A capa está recebendo um toque de genialidade. Isso leva tempo!",
-  "Aguarde. A criatividade artificial está no máximo."
-];
+/**
+ * Função para converter a URL de uma imagem Base64 para um ArrayBuffer,
+ * necessária para o Polyfill de `atob` em alguns ambientes.
+ * @param {string} base64 O dado base64 puro (sem o prefixo mime type)
+ * @returns {ArrayBuffer} O ArrayBuffer com os dados decodificados
+ */
+const base64ToArrayBuffer = (base64) => {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes.buffer;
+};
 
-export default function App() {
-  const [activeTab, setActiveTab] = useState('create');
-  const [apiKey, setApiKey] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [isImageGenerating, setIsImageGenerating] = useState(false);
-  const [statusMessage, setStatusMessage] = useState('');
-  const [resultReady, setResultReady] = useState(false);
-  const [generatedContent, setGeneratedContent] = useState('');
-  const [pdfLibraryLoaded, setPdfLibraryLoaded] = useState(false);
-  const [showApiKey, setShowApiKey] = useState(false); 
-  
-  // Estado para a frase de carregamento bem-humorada
-  const [currentJoke, setCurrentJoke] = useState(loadingPhrases[0]); 
+// Polyfill básico para `atob` se não estiver disponível (importante para o ambiente)
+if (typeof atob === 'undefined') {
+  global.atob = (b64) => Buffer.from(b64, 'base64').toString('binary');
+}
 
-  // Estados para a geração de imagem
-  const [generatedImageURL, setGeneratedImageURL] = useState(null);
-  const [imagePrompt, setImagePrompt] = useState(''); // O prompt que foi efetivamente usado na API
-  
-  const [formData, setFormData] = useState({
-    theme: '',
-    minPages: 5, 
-    maxPages: 10,
-    language: 'portugues',
-    includeImages: false,
-    notes: '', 
-    dedicatedImagePrompt: '', // NOVO CAMPO DEDICADO À IMAGEM
-    revisionType: 'correcao',
-    tone: 'manter',
-    file: null,
-    textContent: '' 
-  });
+// Função de pausa para o backoff exponencial
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-  // --- Funções de Inicialização e Handlers ---
+// Componente principal do aplicativo
+const App = () => {
+  const [prompt, setPrompt] = useState('');
+  const [imageUrl, setImageUrl] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  // Efeito para ciclar as frases de carregamento
-  useEffect(() => {
-    let intervalId;
-    if (isProcessing) {
-      // Começa com uma frase aleatória
-      const initialIndex = Math.floor(Math.random() * loadingPhrases.length);
-      setCurrentJoke(loadingPhrases[initialIndex]);
-
-      // Cicla a cada 5 segundos
-      intervalId = setInterval(() => {
-        const randomIndex = Math.floor(Math.random() * loadingPhrases.length);
-        setCurrentJoke(loadingPhrases[randomIndex]);
-      }, 5000); 
+  // Função principal para chamar a API e gerar a imagem
+  const generateImage = useCallback(async () => {
+    if (!prompt.trim()) {
+      setError("Por favor, digite um prompt para gerar a imagem.");
+      return;
     }
-    // Limpa o timer quando o processamento terminar
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
+
+    setIsLoading(true);
+    setError(null);
+    setImageUrl(null);
+
+    const payload = {
+      instances: [{ prompt: prompt }],
+      parameters: {
+        sampleCount: 1, // Gerar apenas 1 imagem
+        outputMimeType: "image/png",
+        aspectRatio: "1:1", // Aspecto quadrado
       }
     };
-  }, [isProcessing]);
 
-  // Carrega a biblioteca de PDF automaticamente via CDN
-  useEffect(() => {
-    const script = document.createElement('script');
-    script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
-    script.async = true;
-    script.onload = () => {
-      console.log("Biblioteca PDF carregada");
-      setPdfLibraryLoaded(true);
-    };
-    document.body.appendChild(script);
-
-    return () => {
-      document.body.removeChild(script);
-    };
-  }, []);
-
-  const handleInputChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
-  };
-
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setFormData(prev => ({ ...prev, file: file }));
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setFormData(prev => ({ ...prev, textContent: e.target.result }));
-      };
-      reader.readAsText(file);
-    }
-  };
-
-  // --- Lógica de Geração de Imagem com Nano Banana ---
-  const generateImage = useCallback(async (promptForImage) => {
-    setIsImageGenerating(true);
-    
-    // Atualiza o status na tela de resultados
-    setStatusMessage(`Conteúdo pronto. Iniciando geração da imagem de Capa com o prompt: "${promptForImage}". Por favor, aguarde...`);
-    
+    let result = null;
+    let success = false;
+    let retries = 0;
     const maxRetries = 5;
-    let currentRetry = 0;
+    let delay = 1000; // 1 segundo de delay inicial
 
-    const runGeneration = async () => {
+    // Loop de requisições com backoff exponencial para lidar com throttling
+    while (retries < maxRetries && !success) {
       try {
-        
-        // Configuração do Payload para o modelo gemini-2.5-flash-image-preview
-        const payload = {
-            contents: [{
-                parts: [{ text: promptForImage }]
-            }],
-            generationConfig: {
-                responseModalities: ['TEXT', 'IMAGE']
-            },
-        };
-        
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`;
-
         const response = await fetch(apiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
 
+        if (response.status === 429) {
+          // Excesso de requisições (throttling), tentar novamente
+          retries++;
+          if (retries < maxRetries) {
+            await sleep(delay);
+            delay *= 2; // Dobra o delay (backoff exponencial)
+            continue;
+          }
+        }
+
         if (!response.ok) {
-          const errorBody = await response.json().catch(() => ({}));
-          console.error("Erro na API de Imagem. Resposta Completa:", errorBody);
-          throw new Error(`API retornou status ${response.status}: ${errorBody.error?.message || response.statusText}`);
+          throw new Error(`Erro de API: ${response.status} ${response.statusText}`);
         }
 
-        const result = await response.json();
-        
-        const base64Data = result?.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+        result = await response.json();
+        success = true;
 
-        if (base64Data) {
-          const imageUrl = `data:image/png;base64,${base64Data}`;
-          return imageUrl;
-        } else {
-          console.error("Nano Banana API retornou status OK, mas sem dados de imagem. Resposta completa:", result);
-          throw new Error('A API Nano Banana não retornou dados de imagem (pode ser bloqueio por política ou prompt muito vago).');
+      } catch (e) {
+        console.error("Erro na geração de imagem:", e);
+        setError(`Falha ao conectar ou erro interno. Tentativa ${retries + 1}/${maxRetries}.`);
+        retries++;
+        if (retries < maxRetries) {
+          await sleep(delay);
+          delay *= 2;
         }
-
-      } catch (error) {
-        console.error("Erro na geração de imagem:", error);
-        if (currentRetry < maxRetries) {
-          currentRetry++;
-          const delay = Math.pow(2, currentRetry) * 1000;
-          setStatusMessage(`Erro temporário na imagem. Tentando novamente em ${delay / 1000}s... (Tentativa ${currentRetry}/${maxRetries})`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          return runGeneration(); 
-        } else {
-          setStatusMessage(`Falha DEFINITIVA na geração da imagem após ${maxRetries} tentativas. Prosseguindo com capa textual.`);
-          return null; 
-        }
-      } 
-    };
-    
-    const imageUrl = await runGeneration();
-    setIsImageGenerating(false);
-    
-    if (imageUrl && !statusMessage.startsWith('Falha')) {
-        setStatusMessage('Passo 2/2: Conteúdo e imagem de capa gerados com sucesso!');
+      }
     }
-    
-    return imageUrl;
-  }, [apiKey, statusMessage]);
 
+    setIsLoading(false);
 
-  // --- Lógica de Geração de PDF ---
-  const drawTextBlock = (doc, text, margin, pageHeight, usableWidth, lineHeight, paragraphSpacing, cursorRef) => {
-    const blocks = text.split('\n');
-
-    blocks.forEach(block => {
-      const trimmedBlock = block.trim();
-      if (!trimmedBlock) return;
-
-      let currentLineHeight = lineHeight;
-      let currentSpacing = paragraphSpacing;
-      let isTitle = trimmedBlock.startsWith('##') || trimmedBlock.startsWith('#');
-      
-      if (isTitle) {
-          doc.setFontSize(16);
-          doc.setFont("helvetica", "bold");
-          currentLineHeight = 9;
-          currentSpacing = paragraphSpacing * 2;
-      } else {
-          doc.setFontSize(12);
-          doc.setFont("helvetica", "normal");
-      }
-      
-      const lines = doc.splitTextToSize(trimmedBlock.replace(/^#+/, ''), usableWidth);
-
-      if (cursorRef.current > margin) {
-        cursorRef.current += currentSpacing; 
-      }
-
-      lines.forEach(line => {
-        if (cursorRef.current > pageHeight - margin) { 
-          doc.addPage();
-          cursorRef.current = margin; 
-          doc.setFontSize(12);
-          doc.setFont("helvetica", "normal");
-        }
-        
-        doc.text(line, margin, cursorRef.current);
-        cursorRef.current += currentLineHeight;
-      });
-      
-      doc.setFontSize(12);
-      doc.setFont("helvetica", "normal");
-    });
-  };
-
-  const generatePDF = (text, title, imageUrl, imagePrompt) => {
-    if (!window.jspdf || !title) return; 
-
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const margin = 30; 
-    const pageWidth = 210;
-    const pageHeight = 297;
-    const usableWidth = pageWidth - (margin * 2);
-    const lineHeight = 7; 
-    const paragraphSpacing = 3; 
-    const cursorY = { current: margin }; 
-    const imagePlaceholderText = "Capa Textual - Imagem não gerada ou solicitada."; 
-
-    // --- Capa (Primeira Página) ---
-    doc.setFont("helvetica", "bold"); doc.setFontSize(36); 
-    doc.setTextColor(50, 50, 50); 
-    
-    // Título Principal
-    doc.text(title, pageWidth / 2, pageHeight / 2 - 60, { align: 'center' }); 
-    
-    // Subtítulo/Autor
-    doc.setFont("helvetica", "italic"); doc.setFontSize(16);
-    doc.text("Por: Escritor Artificial", pageWidth / 2, pageHeight / 2 - 45, { align: 'center' }); 
-
-    // Imagem na Capa, se existir
-    if (imageUrl) {
-        const coverImageWidth = usableWidth;
-        const coverImageHeight = coverImageWidth * 0.7; 
-        const coverImageX = margin;
-        const coverImageY = pageHeight / 2 - 30; 
-
-        try {
-            doc.addImage(imageUrl, 'PNG', coverImageX, coverImageY, coverImageWidth, coverImageHeight);
-            
-            // Créditos da imagem
-            doc.setFontSize(8);
-            doc.setFont("helvetica", "normal");
-            doc.setTextColor(100);
-            doc.text(`Ilustração Gerada por IA: ${imagePrompt || 'Capa do Documento'}`, pageWidth / 2, coverImageY + coverImageHeight + 5, { align: 'center' });
-
-        } catch (e) {
-            console.error("Erro ao adicionar imagem à capa:", e);
-        }
+    if (success && result && result.predictions && result.predictions.length > 0 && result.predictions[0].bytesBase64Encoded) {
+      const base64Data = result.predictions[0].bytesBase64Encoded;
+      // Cria a URL de dados para exibir a imagem
+      const newImageUrl = `data:image/png;base64,${base64Data}`;
+      setImageUrl(newImageUrl);
+    } else if (success) {
+      setError("A geração da imagem falhou ou o resultado estava vazio.");
     } else {
-        // Placeholder se não houver imagem
-        doc.setTextColor(150);
-        doc.setFontSize(14);
-        doc.setFont("helvetica", "italic");
-        doc.text(imagePlaceholderText, pageWidth / 2, pageHeight / 2, { align: 'center' });
+      setError("Não foi possível gerar a imagem após várias tentativas. Tente novamente mais tarde.");
     }
-    
-    // Créditos da Ferramenta no rodapé da Capa
-    doc.setFont("helvetica", "normal"); doc.setFontSize(10);
-    doc.setTextColor(150, 150, 150);
-    doc.text("Gerado por Google Gemini", pageWidth / 2, pageHeight - 40, { align: 'center' }); 
-    
-    doc.addPage();
-    cursorY.current = margin; 
+  }, [prompt]);
 
-    // --- Processamento do Conteúdo (Limpeza da Tag de Imagem) ---
-    let textToDraw = text; 
-    textToDraw = textToDraw.replace(IMAGE_SUGGESTION_REGEX, ''); 
-
-    // Desenha o corpo do texto 
-    drawTextBlock(doc, textToDraw, margin, pageHeight, usableWidth, lineHeight, paragraphSpacing, cursorY);
-
-    // Header e Footer (Numeração)
-    const pageCount = doc.internal.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      doc.setFontSize(8);
-      doc.setTextColor(150);
-      if (i > 1) { // Não numera a Capa
-        doc.text(title, margin, 15); 
-        doc.text(`Página ${i - 1} de ${pageCount - 1}`, pageWidth - margin, pageHeight - 15, { align: 'right' }); // Ajusta numeração
-      }
-      doc.text(`AI eBook Studio`, margin, pageHeight - 15);
-    }
-
-    // Usar o título para o nome do arquivo
-    const safeTitle = title.replace(/[^a-z0-9]/gi, '_').toLowerCase().substring(0, 50); 
-    doc.save(`${safeTitle}_ebook.pdf`);
-  };
-
-
-  // --- Lógica Principal: Envio e Chaining de Chamadas ---
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!apiKey) {
-      alert('Por favor, insira sua chave de API do Google Studio.');
-      return;
-    }
-    
-    if (!formData.theme) {
-       alert('Por favor, insira um Tema / Título para começar.');
-       return;
-    }
-
-    setIsProcessing(true);
-    setResultReady(false);
-    setGeneratedImageURL(null); 
-    setImagePrompt(''); 
-    
-    try {
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
-      // 1. Definição do Prompt de Geração de Texto
-      let prompt = "";
-      let imagePromptForGenerator = null;
-      const dedicatedPromptText = formData.dedicatedImagePrompt.trim();
-      const notesText = formData.notes.trim();
-
-      // Estratégia de imagem:
-      if (formData.includeImages) {
-          if (dedicatedPromptText) {
-              // PRIORIDADE 1: Usa o prompt dedicado (NÃO pede tag no texto)
-              imagePromptForGenerator = dedicatedPromptText;
-              setImagePrompt(imagePromptForGenerator); 
-              
-              const notesInstruction = notesText ? `Observações para o texto: "${notesText}".` : '';
-              
-              if (activeTab === 'create') {
-                prompt = `Atue como um escritor profissional. Escreva um ebook completo sobre o tema: "${formData.theme}".
-                    **MANDATÓRIO: Comece o seu texto com um índice detalhado dos capítulos e subcapítulos.**
-                    **MANDATÓRIO: Ao final do documento, inclua uma seção chamada "Referências Sugeridas" com 3 referências bibliográficas relevantes, utilizando um formato de lista.**
-                    Idioma: ${formData.language}.
-                    O ebook deve ser detalhado, ter uma introdução, vários capítulos bem desenvolvidos e uma conclusão.
-                    Tamanho estimado de conteúdo: equivalente a entre ${formData.minPages} e ${formData.maxPages} páginas de leitura.
-                    Use formatação clara com Títulos (use ## para títulos principais) e Parágrafos.
-                    ${notesInstruction}
-                    INSTRUÇÃO ADICIONAL: Não inclua nenhuma sugestão visual ou tag de imagem no texto.`;
-              } else {
-                 const contentToRevise = formData.textContent || "O usuário não carregou um texto legível, por favor crie um exemplo de revisão sobre: " + formData.theme;
-                 prompt = `Atue como um editor chefe. Revise o seguinte texto.
-                    Objetivo: ${formData.revisionType}.
-                    Tom de voz desejado: ${formData.tone}.
-                    Idioma de saída: ${formData.language}.
-                    ${notesInstruction}
-                    INSTRUÇÃO ADICIONAL: Não inclua nenhuma sugestão visual ou tag de imagem no texto.
-                    Texto original para trabalhar: "${contentToRevise.substring(0, 10000)}"`;
-              }
-
-
-          } else {
-              // PRIORIDADE 2: Tenta parsear do texto (PEDE tag no texto)
-              const imageInstruction = "INSTRUÇÃO OBLIGATÓRIA: O usuário deseja a imagem de capa. Inclua UMA ÚNICA sugestão visual detalhada no parágrafo onde ela deve aparecer, marcada exatamente assim: [SUGESTÃO DE IMAGEM: descrição da cena].";
-              
-              if (activeTab === 'create') {
-                prompt = `Atue como um escritor profissional. Escreva um ebook completo sobre o tema: "${formData.theme}".
-                    **MANDATÓRIO: Comece o seu texto com um índice detalhado dos capítulos e subcapítulos.**
-                    **MANDATÓRIO: Ao final do documento, inclua uma seção chamada "Referências Sugeridas" com 3 referências bibliográficas relevantes, utilizando um formato de lista.**
-                    Idioma: ${formData.language}.
-                    O ebook deve ser detalhado, ter uma introdução, vários capítulos bem desenvolvidos e uma conclusão.
-                    Tamanho estimado de conteúdo: equivalente a entre ${formData.minPages} e ${formData.maxPages} páginas de leitura.
-                    Use formatação clara com Títulos (use ## para títulos principais) e Parágrafos.
-                    ${imageInstruction}`;
-              } else {
-                 const contentToRevise = formData.textContent || "O usuário não carregou um texto legível, por favor crie um exemplo de revisão sobre: " + formData.theme;
-                 prompt = `Atue como um editor chefe. Revise o seguinte texto.
-                    Objetivo: ${formData.revisionType}.
-                    Tom de voz desejado: ${formData.tone}.
-                    Idioma de saída: ${formData.language}.
-                    ${imageInstruction}
-                    Texto original para trabalhar: "${contentToRevise.substring(0, 10000)}"`;
-              }
-          }
-      } else {
-          // SEM IMAGEM: Configuração padrão
-          const notesPart = activeTab === 'create' ? `Público-alvo/Obs: ${formData.notes}.` : `Observações: ${formData.notes}.`;
-          
-          if (activeTab === 'create') {
-            prompt = `Atue como um escritor profissional. Escreva um ebook completo sobre o tema: "${formData.theme}".
-                **MANDATÓRIO: Comece o seu texto com um índice detalhado dos capítulos e subcapítulos.**
-                **MANDATÓRIO: Ao final do documento, inclua uma seção chamada "Referências Sugeridas" com 3 referências bibliográficas relevantes, utilizando um formato de lista.**
-                Idioma: ${formData.language}.
-                ${notesPart}
-                O ebook deve ser detalhado, ter uma introdução, vários capítulos bem desenvolvidos e uma conclusão.
-                Tamanho estimado de conteúdo: equivalente a entre ${formData.minPages} e ${formData.maxPages} páginas de leitura.
-                Use formatação clara com Títulos (use ## para títulos principais) e Parágrafos.
-                Não inclua sugestões de imagens.`;
-          } else {
-             const contentToRevise = formData.textContent || "O usuário não carregou um texto legível, por favor crie um exemplo de revisão sobre: " + formData.theme;
-             prompt = `Atue como um editor chefe. Revise o seguinte texto.
-                Objetivo: ${formData.revisionType}.
-                Tom de voz desejado: ${formData.tone}.
-                Idioma de saída: ${formData.language}.
-                Não inclua sugestões de imagens.
-                Texto original para trabalhar: "${contentToRevise.substring(0, 10000)}"`;
-          }
-      }
-      
-      // 2. Chamada Gemini (Texto)
-      setStatusMessage('Passo 1/2: Gerando o texto do documento. Aguarde...');
-      const result = await model.generateContent(prompt);
-      const text = result.response.text();
-      setGeneratedContent(text);
-      setResultReady(true); 
-      
-      // 3. Chamada Nano Banana (Imagem) - Execução
-      if (formData.includeImages) {
-          
-          if (!imagePromptForGenerator) {
-              // Se não tinha um prompt dedicado, tenta extrair do texto gerado
-              const match = text.match(IMAGE_SUGGESTION_REGEX);
-              if (match && match[1]) {
-                  imagePromptForGenerator = match[1].trim(); 
-                  setImagePrompt(imagePromptForGenerator); 
-              } 
-          }
-
-          if (imagePromptForGenerator) {
-              const imageUrl = await generateImage(imagePromptForGenerator); 
-              
-              if (imageUrl) {
-                  setGeneratedImageURL(imageUrl);
-              } 
-          } else {
-               setStatusMessage('Conteúdo pronto. A imagem não foi gerada pois não foi encontrado um prompt exclusivo nem uma sugestão no texto. Capa Textual.');
-          }
-      } else {
-        setStatusMessage('Conteúdo pronto. Prossiga para a tela de download.');
-      }
-      
-      // 4. Conclusão
-      setIsProcessing(false);
-
-    } catch (error) {
-      console.error(error);
-      const errorMsg = error.message.includes('API key') ? 
-        'Erro de autenticação. Verifique sua Chave API.' : 
-        'Erro desconhecido. O erro pode ser de conteúdo ou na comunicação da API. Verifique o console do navegador para detalhes.';
-        
-      setStatusMessage(`Erro: ${errorMsg}`);
-      setIsProcessing(false);
-      alert(`Erro: ${errorMsg}`);
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !isLoading) {
+      generateImage();
     }
   };
 
-  // --- UI para Resultados (Tela 2) ---
-  if (resultReady) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-start justify-center p-4 font-sans">
-        <div className="bg-white w-full max-w-4xl rounded-2xl shadow-xl p-8 text-center mt-12">
-          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <CheckCircle2 className="w-10 h-10 text-green-600" />
-          </div>
-          <h2 className="text-3xl font-bold text-slate-800 mb-2">Documento Finalizado!</h2>
-          <p className="text-slate-600 mb-6 font-semibold">{statusMessage}</p> 
-          
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 text-left">
-            {/* Bloco de Imagem */}
-            <div className="p-4 border border-slate-200 rounded-lg bg-slate-50">
-              <h3 className="text-lg font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                <ImageIcon className="w-5 h-5 text-indigo-600" /> Imagem de Capa
-              </h3>
-              
-              {imagePrompt && (
-                <div className="text-sm text-slate-600 mb-3 border-l-4 border-indigo-400 pl-2">
-                  <p className="font-semibold">Prompt Utilizado para a Imagem:</p>
-                  <span className="font-mono text-xs block mt-1 bg-white p-2 rounded break-words">{imagePrompt}</span>
-                </div>
-              )}
-              
-              {isImageGenerating ? (
-                <div className="h-48 flex items-center justify-center bg-indigo-50 rounded-lg border border-indigo-200">
-                  <div className="text-center">
-                     <Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-600 mb-2" />
-                     <p className="text-sm text-slate-700">Aguardando a conclusão da geração da imagem...</p>
-                     <p className="text-xs text-slate-500 mt-1">O texto já está pronto, mas a imagem pode levar mais alguns segundos.</p>
-                  </div>
-                </div>
-              ) : generatedImageURL ? (
-                <img 
-                  src={generatedImageURL} 
-                  alt="Imagem gerada por IA" 
-                  className="w-full h-auto rounded-lg shadow-lg border border-slate-300" 
-                />
-              ) : (
-                <div className="h-48 flex items-center justify-center bg-red-50 rounded-lg border border-red-200">
-                  <div className="text-center text-red-700">
-                      <AlertCircle className="w-8 h-8 mx-auto mb-2" />
-                      <p className="text-sm font-semibold">Capa Textual.</p>
-                      <p className="text-xs mt-1">Nenhuma imagem gerada ou falha na API.</p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-
-            {/* Bloco de Conteúdo e PDF */}
-            <div className="p-4 border border-slate-200 rounded-lg bg-slate-50">
-              <h3 className="text-lg font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                 <FileText className="w-5 h-5 text-indigo-600" /> Conteúdo Final
-              </h3>
-              <div className="bg-white p-4 rounded mb-4 h-48 overflow-y-auto text-left text-xs font-mono border border-slate-300 shadow-inner">
-                {generatedContent}
-              </div>
-
-              <button 
-                onClick={() => generatePDF(generatedContent, formData.theme, generatedImageURL, imagePrompt)}
-                disabled={!pdfLibraryLoaded}
-                className={`px-8 py-3 rounded-lg font-semibold flex items-center justify-center gap-2 w-full transition-colors shadow-lg ${pdfLibraryLoaded ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-slate-400 cursor-wait'} ${generatedImageURL ? 'border-2 border-green-300' : ''} text-white`}
-              >
-                <Download className="w-5 h-5" /> 
-                Baixar PDF {generatedImageURL ? 'COM CAPA ILUSTRADA' : '(Capa Textual)'}
-              </button>
-              
-              <button onClick={() => setResultReady(false)} className="mt-4 text-indigo-600 hover:underline w-full">
-                Voltar e Fazer Outra Criação
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // --- UI para Criação (Tela 1) ---
   return (
-    // Fundo mais colorido (Gradiente Rosa e Roxo)
-    <div className="relative min-h-screen font-sans pb-20 bg-gradient-to-br from-pink-50 to-purple-100">
-      
-      {/* Camada de Background/Marca d'água (Prateleira de Livros Estilizada) */}
-      <div 
-        className="fixed inset-0 pointer-events-none z-0 opacity-10" 
-        style={{
-          // Padrão que simula uma textura estilizada (usando um placeholder para ser seguro e leve)
-          backgroundImage: `url('https://placehold.co/150x150/D0A0F0/FFFFFF?text=BOOK')`,
-          backgroundRepeat: 'repeat',
-          backgroundSize: '150px 150px',
-        }}
-      ></div>
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center p-4 sm:p-8 font-sans">
+      <div className="w-full max-w-4xl bg-white shadow-xl rounded-2xl p-6 sm:p-8">
+        
+        {/* Título e Descrição */}
+        <header className="text-center mb-8">
+          <Sparkles className="w-8 h-8 text-indigo-600 mx-auto mb-2" />
+          <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900">
+            Gerador de Imagens IA
+          </h1>
+          <p className="text-gray-500 mt-2">
+            Descreva o que você deseja criar e veja a IA dar vida à sua imaginação.
+          </p>
+        </header>
 
-      <header className="relative z-10 bg-white shadow-lg border-b border-purple-200">
-        <div className="max-w-5xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-3">
-            <div className="bg-indigo-600 p-2 rounded-lg"><BookOpen className="w-6 h-6 text-white" /></div>
-            <h1 className="text-xl font-bold text-slate-800">AI eBook Studio <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded ml-2">Conectado ao Google Gemini</span></h1>
+        {/* Input e Botão */}
+        <div className="flex flex-col sm:flex-row gap-3 mb-8">
+          <input
+            type="text"
+            className="flex-grow p-3 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition shadow-sm"
+            placeholder="Ex: Um gato astronauta surfando em Saturno, estilo aquarela, 4k"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={isLoading}
+          />
+          <button
+            onClick={generateImage}
+            disabled={isLoading}
+            className={`flex items-center justify-center gap-2 px-6 py-3 text-white font-semibold rounded-xl transition duration-200 shadow-md 
+              ${isLoading ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800'}`}
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Criando...
+              </>
+            ) : (
+              <>
+                Gerar Imagem <ArrowRight className="w-5 h-5 ml-1" />
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Área de Visualização do Resultado */}
+        <div className="flex justify-center w-full">
+          <div className="w-full aspect-square max-w-md bg-gray-200 rounded-xl shadow-inner flex items-center justify-center overflow-hidden border-4 border-dashed border-gray-300">
+            {error && (
+              <div className="p-4 text-center text-red-700 bg-red-100 rounded-lg max-w-xs mx-auto">
+                <p className="font-semibold">Erro na Geração:</p>
+                <p className="text-sm mt-1">{error}</p>
+              </div>
+            )}
+
+            {!isLoading && !imageUrl && !error && (
+              <div className="text-center text-gray-500 p-4">
+                <Image className="w-12 h-12 mx-auto mb-2" />
+                <p>O resultado da sua imagem aparecerá aqui.</p>
+                <p className="text-sm mt-1">Digite um prompt e clique em "Gerar Imagem".</p>
+              </div>
+            )}
+
+            {imageUrl && (
+              <img
+                src={imageUrl}
+                alt={prompt || "Imagem gerada por IA"}
+                className="w-full h-full object-cover rounded-xl"
+              />
+            )}
           </div>
         </div>
-      </header>
-      
-      {/* O main tem um z-index para ficar acima da marca d'água */}
-      <main className="relative z-10 max-w-3xl mx-auto px-4 py-8">
         
-        {isProcessing && (
-          <div className="fixed inset-0 bg-white/70 backdrop-blur-sm flex items-center justify-center z-[100]">
-            <div className="bg-white p-8 rounded-xl shadow-2xl text-center border-t-4 border-indigo-600">
-              <Loader2 className="w-10 h-10 animate-spin text-indigo-600 mx-auto mb-4" />
-              <h3 className="text-lg font-bold text-slate-800 mb-2">Processando Documento...</h3>
-              {/* Usa a frase bem-humorada aqui */}
-              <p className="text-slate-600 font-medium">{currentJoke}</p> 
-              <p className="text-sm text-slate-500 mt-2">Por favor, não feche esta janela.</p>
-            </div>
-          </div>
-        )}
-        
-          <div className="bg-white p-1 rounded-xl shadow-sm border border-slate-200 flex mb-8">
-            <button onClick={() => setActiveTab('create')} className={`flex-1 py-3 px-4 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${activeTab === 'create' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-50'}`}>
-              <Wand2 className="w-4 h-4" /> Criar do Zero
-            </button>
-            <button onClick={() => setActiveTab('enhance')} className={`flex-1 py-3 px-4 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${activeTab === 'enhance' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-50'}`}>
-              <Upload className="w-4 h-4" /> Revisar Texto
-            </button>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow-xl border border-slate-100 p-6 md:p-8">
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {activeTab === 'enhance' && (
-                <div className="mb-6 p-4 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 text-center">
-                  <p className="text-sm text-slate-500 mb-2">Selecione um arquivo de texto (.txt) ou cole o conteúdo abaixo</p>
-                  <input type="file" accept=".txt" onChange={handleFileUpload} className="mb-4" />
-                  <textarea 
-                    className="w-full p-3 text-sm border rounded" 
-                    rows="4" 
-                    placeholder="Ou cole o texto aqui..."
-                    value={formData.textContent}
-                    onChange={(e) => setFormData({...formData, textContent: e.target.value})}
-                  ></textarea>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Tema / Título</label>
-                <input type="text" name="theme" required value={formData.theme} onChange={handleInputChange} className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Sobre o que é o livro?" />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Idioma</label>
-                  <select name="language" value={formData.language} onChange={handleInputChange} className="w-full px-4 py-3 rounded-lg border border-slate-300 bg-white">
-                    <option value="portugues">Português</option>
-                    <option value="ingles">Inglês</option>
-                    <option value="espanhol">Espanhol</option>
-                    <option value="frances">Francês</option>
-                    <option value="italiano">Italiano</option>
-                    <option value="mandarim">Mandarim</option>
-                  </select>
-                </div>
-                {activeTab === 'create' && (
-                   <div className="flex gap-4">
-                     <div className="flex-1">
-                        <label className="block text-xs font-medium text-slate-500 mb-2">Mín. Páginas</label>
-                        <input type="number" name="minPages" value={formData.minPages} onChange={handleInputChange} className="w-full px-3 py-3 rounded-lg border border-slate-300" />
-                     </div>
-                     <div className="flex-1">
-                        <label className="block text-xs font-medium text-slate-500 mb-2">Máx. Páginas</label>
-                        <input type="number" name="maxPages" value={formData.maxPages} onChange={handleInputChange} className="w-full px-3 py-3 rounded-lg border border-slate-300" />
-                     </div>
-                   </div>
-                )}
-              </div>
-              
-              {/* Seção de Imagem DEDICADA */}
-              <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-200">
-                <div className="flex items-center gap-3 mb-4">
-                    <input 
-                      type="checkbox" 
-                      id="ai-images"
-                      name="includeImages"
-                      checked={formData.includeImages}
-                      onChange={handleInputChange}
-                      className="w-6 h-6 text-indigo-600 rounded focus:ring-indigo-500 border-gray-300 cursor-pointer"
-                    />
-                    <label htmlFor="ai-images" className="font-bold text-slate-800 cursor-pointer select-none flex items-center gap-2">
-                      <ImageIcon className="w-5 h-5 text-indigo-600" /> Incluir Capa Gerada por IA
-                    </label>
-                </div>
-
-                {formData.includeImages && (
-                    <div className="space-y-4">
-                        <div className="border border-indigo-300 p-3 rounded-lg bg-white">
-                            <label className="block text-sm font-medium text-indigo-700 mb-2 flex items-center gap-1">
-                                <Lightbulb className="w-4 h-4" /> Prompt Exclusivo para Capa/Imagem
-                            </label>
-                            <textarea 
-                                name="dedicatedImagePrompt" 
-                                value={formData.dedicatedImagePrompt} 
-                                onChange={handleInputChange} 
-                                rows="2" 
-                                className="w-full p-2 text-sm rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none" 
-                                placeholder="Ex: Um castelo antigo em estilo fantasia, arte digital, cores vibrantes."
-                            ></textarea>
-                            <p className="text-xs text-slate-500 mt-1">**Recomendado:** Use um prompt simples e descritivo aqui para maior chance de sucesso na imagem.</p>
-                        </div>
-                        <p className="text-xs text-slate-600 italic">
-                            *Se o campo acima estiver vazio, a IA tentará encontrar uma sugestão no texto que ela gerar. Se estiver preenchido, ela usará este prompt e o texto será ignorado para fins de imagem.*
-                        </p>
-                    </div>
-                )}
-              </div>
-
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Observações Gerais (Tom, Público, Estrutura)</label>
-                <textarea name="notes" value={formData.notes} onChange={handleInputChange} rows="2" className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Ex: Usar linguagem simples, focar em exemplos para crianças de 10 anos."></textarea>
-              </div>
-
-              <button 
-                type="submit" 
-                disabled={!apiKey || !formData.theme} 
-                className={`w-full py-4 rounded-xl font-bold text-white shadow-lg flex items-center justify-center gap-2 
-                  ${(apiKey && formData.theme) ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-slate-400 cursor-not-allowed'}`}
-              >
-                <Wand2 className="w-5 h-5" /> {activeTab === 'create' ? 'Gerar com IA' : 'Revisar com IA'}
-              </button>
-            </form>
-          </div>
-      </main>
-      
-      {/* Container Fixo para a Chave API (Canto Inferior Direito) */}
-      <div className="relative z-10 fixed bottom-4 right-4 p-2 bg-white shadow-2xl rounded-xl border border-slate-200 w-full max-w-xs transition-opacity hover:opacity-100 opacity-90">
-          <div className="flex items-center gap-2">
-            <Key className="w-4 h-4 text-slate-500" />
-            <input 
-              type={showApiKey ? "text" : "password"} 
-              placeholder="Chave API Google (Cole Aqui)" 
-              className="bg-transparent flex-1 outline-none text-xs text-slate-700 placeholder-slate-400"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-            />
-            <button 
-              type="button"
-              onClick={() => setShowApiKey(!showApiKey)}
-              className="text-slate-500 hover:text-indigo-600 p-1 rounded transition-colors"
-              title={showApiKey ? "Ocultar Chave" : "Exibir Chave"}
-            >
-              {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            </button>
-          </div>
       </div>
     </div>
   );
-}
+};
+
+export default App;
