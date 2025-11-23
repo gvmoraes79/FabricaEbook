@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   BookOpen, Wand2, Upload, CheckCircle2, FileText, 
-  Loader2, Settings2, Image as ImageIcon, 
-  Download, Key, AlertCircle, Eye, EyeOff
+  Loader2, Image as ImageIcon, Download, 
+  Key, AlertCircle, Eye, EyeOff, Lightbulb
 } from 'lucide-react';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // Regex para encontrar a primeira sugestão de imagem no texto e capturar a descrição
 const IMAGE_SUGGESTION_REGEX = /\[SUGESTÃO DE IMAGEM: (.*?)]/i;
 
-// Frases bem-humoradas e piadas para a tela de carregamento (Atualizado com humor infantil!)
+// Frases bem-humoradas e piadas para a tela de carregamento
 const loadingPhrases = [
   "O que é, o que é: Feito para andar, mas não anda? (A rua)",
   "Piada de pontinho: O pontinho vermelho subiu no muro e caiu. Por quê? (Porque ele estava maduro!)",
@@ -40,7 +40,7 @@ export default function App() {
 
   // Estados para a geração de imagem
   const [generatedImageURL, setGeneratedImageURL] = useState(null);
-  const [imagePrompt, setImagePrompt] = useState(''); 
+  const [imagePrompt, setImagePrompt] = useState(''); // O prompt que foi efetivamente usado na API
   
   const [formData, setFormData] = useState({
     theme: '',
@@ -49,6 +49,7 @@ export default function App() {
     language: 'portugues',
     includeImages: false,
     notes: '', 
+    dedicatedImagePrompt: '', // NOVO CAMPO DEDICADO À IMAGEM
     revisionType: 'correcao',
     tone: 'manter',
     file: null,
@@ -119,8 +120,8 @@ export default function App() {
   const generateImage = useCallback(async (promptForImage) => {
     setIsImageGenerating(true);
     
-    // Atualiza o status na tela de resultados (Não usamos o currentJoke aqui)
-    setStatusMessage('Conteúdo pronto. Iniciando geração da imagem de Capa (Nano Banana). Por favor, aguarde...');
+    // Atualiza o status na tela de resultados
+    setStatusMessage(`Conteúdo pronto. Iniciando geração da imagem de Capa com o prompt: "${promptForImage}". Por favor, aguarde...`);
     
     const maxRetries = 5;
     let currentRetry = 0;
@@ -169,12 +170,11 @@ export default function App() {
         if (currentRetry < maxRetries) {
           currentRetry++;
           const delay = Math.pow(2, currentRetry) * 1000;
-          // Mensagem de status técnica para o console e para o usuário
           setStatusMessage(`Erro temporário na imagem. Tentando novamente em ${delay / 1000}s... (Tentativa ${currentRetry}/${maxRetries})`);
           await new Promise(resolve => setTimeout(resolve, delay));
           return runGeneration(); 
         } else {
-          setStatusMessage(`Falha na geração da imagem após ${maxRetries} tentativas. Prosseguindo com capa textual.`);
+          setStatusMessage(`Falha DEFINITIVA na geração da imagem após ${maxRetries} tentativas. Prosseguindo com capa textual.`);
           return null; 
         }
       } 
@@ -184,7 +184,7 @@ export default function App() {
     setIsImageGenerating(false);
     
     if (imageUrl && !statusMessage.startsWith('Falha')) {
-        setStatusMessage('Conteúdo e imagem de capa gerados com sucesso!');
+        setStatusMessage('Passo 2/2: Conteúdo e imagem de capa gerados com sucesso!');
     }
     
     return imageUrl;
@@ -248,7 +248,7 @@ export default function App() {
     const lineHeight = 7; 
     const paragraphSpacing = 3; 
     const cursorY = { current: margin }; 
-    const imagePlaceholderText = "Para uma capa profissional, gere uma imagem e insira-a aqui."; 
+    const imagePlaceholderText = "Capa Textual - Imagem não gerada ou solicitada."; 
 
     // --- Capa (Primeira Página) ---
     doc.setFont("helvetica", "bold"); doc.setFontSize(36); 
@@ -345,18 +345,20 @@ export default function App() {
       const genAI = new GoogleGenerativeAI(apiKey);
       const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-      // 1. Geração do Prompt
+      // 1. Definição do Prompt de Geração de Texto
       let prompt = "";
       let imagePromptForGenerator = null;
-      let notesText = formData.notes.trim();
+      const dedicatedPromptText = formData.dedicatedImagePrompt.trim();
+      const notesText = formData.notes.trim();
 
-      // Determine a estratégia de imagem
+      // Estratégia de imagem:
       if (formData.includeImages) {
-          if (notesText) {
-              imagePromptForGenerator = notesText;
+          if (dedicatedPromptText) {
+              // PRIORIDADE 1: Usa o prompt dedicado (NÃO pede tag no texto)
+              imagePromptForGenerator = dedicatedPromptText;
               setImagePrompt(imagePromptForGenerator); 
               
-              const notesInstruction = `O usuário forneceu observações: "${notesText}". Use-as para guiar o texto (público, tom, estilo). **NÃO** inclua o tag [SUGESTÃO DE IMAGEM: ...]. A imagem de capa será gerada separadamente usando estas observações.`;
+              const notesInstruction = notesText ? `Observações para o texto: "${notesText}".` : '';
               
               if (activeTab === 'create') {
                 prompt = `Atue como um escritor profissional. Escreva um ebook completo sobre o tema: "${formData.theme}".
@@ -366,7 +368,8 @@ export default function App() {
                     O ebook deve ser detalhado, ter uma introdução, vários capítulos bem desenvolvidos e uma conclusão.
                     Tamanho estimado de conteúdo: equivalente a entre ${formData.minPages} e ${formData.maxPages} páginas de leitura.
                     Use formatação clara com Títulos (use ## para títulos principais) e Parágrafos.
-                    ${notesInstruction}`;
+                    ${notesInstruction}
+                    INSTRUÇÃO ADICIONAL: Não inclua nenhuma sugestão visual ou tag de imagem no texto.`;
               } else {
                  const contentToRevise = formData.textContent || "O usuário não carregou um texto legível, por favor crie um exemplo de revisão sobre: " + formData.theme;
                  prompt = `Atue como um editor chefe. Revise o seguinte texto.
@@ -374,12 +377,14 @@ export default function App() {
                     Tom de voz desejado: ${formData.tone}.
                     Idioma de saída: ${formData.language}.
                     ${notesInstruction}
+                    INSTRUÇÃO ADICIONAL: Não inclua nenhuma sugestão visual ou tag de imagem no texto.
                     Texto original para trabalhar: "${contentToRevise.substring(0, 10000)}"`;
               }
 
 
           } else {
-              const imageInstruction = "INSTRUÇÃO OBLIGATÓRIA: O usuário deseja a imagem. Inclua UMA ÚNICA sugestão visual detalhada no texto, exatamente no parágrafo onde ela deve aparecer, marcada exatamente assim: [SUGESTÃO DE IMAGEM: descrição da cena].";
+              // PRIORIDADE 2: Tenta parsear do texto (PEDE tag no texto)
+              const imageInstruction = "INSTRUÇÃO OBLIGATÓRIA: O usuário deseja a imagem de capa. Inclua UMA ÚNICA sugestão visual detalhada no parágrafo onde ela deve aparecer, marcada exatamente assim: [SUGESTÃO DE IMAGEM: descrição da cena].";
               
               if (activeTab === 'create') {
                 prompt = `Atue como um escritor profissional. Escreva um ebook completo sobre o tema: "${formData.theme}".
@@ -401,6 +406,7 @@ export default function App() {
               }
           }
       } else {
+          // SEM IMAGEM: Configuração padrão
           const notesPart = activeTab === 'create' ? `Público-alvo/Obs: ${formData.notes}.` : `Observações: ${formData.notes}.`;
           
           if (activeTab === 'create') {
@@ -425,7 +431,7 @@ export default function App() {
       }
       
       // 2. Chamada Gemini (Texto)
-      setStatusMessage('Passo 1/2: Gerando o texto do documento...');
+      setStatusMessage('Passo 1/2: Gerando o texto do documento. Aguarde...');
       const result = await model.generateContent(prompt);
       const text = result.response.text();
       setGeneratedContent(text);
@@ -435,6 +441,7 @@ export default function App() {
       if (formData.includeImages) {
           
           if (!imagePromptForGenerator) {
+              // Se não tinha um prompt dedicado, tenta extrair do texto gerado
               const match = text.match(IMAGE_SUGGESTION_REGEX);
               if (match && match[1]) {
                   imagePromptForGenerator = match[1].trim(); 
@@ -449,7 +456,7 @@ export default function App() {
                   setGeneratedImageURL(imageUrl);
               } 
           } else {
-               setStatusMessage('Conteúdo pronto. Nenhuma sugestão de imagem foi encontrada no texto ou nas observações. Capa Textual.');
+               setStatusMessage('Conteúdo pronto. A imagem não foi gerada pois não foi encontrado um prompt exclusivo nem uma sugestão no texto. Capa Textual.');
           }
       } else {
         setStatusMessage('Conteúdo pronto. Prossiga para a tela de download.');
@@ -514,7 +521,7 @@ export default function App() {
                   <div className="text-center text-red-700">
                       <AlertCircle className="w-8 h-8 mx-auto mb-2" />
                       <p className="text-sm font-semibold">Capa Textual.</p>
-                      <p className="text-xs mt-1">Nenhuma imagem gerada (falha na IA ou não solicitada).</p>
+                      <p className="text-xs mt-1">Nenhuma imagem gerada ou falha na API.</p>
                   </div>
                 </div>
               )}
@@ -645,30 +652,49 @@ export default function App() {
                 )}
               </div>
               
-              {/* Checkbox de Imagens */}
-              <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-100 flex items-center gap-3">
-                <div className="bg-white p-2 rounded-md shadow-sm">
-                  <ImageIcon className="w-5 h-5 text-indigo-600" />
+              {/* Seção de Imagem DEDICADA */}
+              <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-200">
+                <div className="flex items-center gap-3 mb-4">
+                    <input 
+                      type="checkbox" 
+                      id="ai-images"
+                      name="includeImages"
+                      checked={formData.includeImages}
+                      onChange={handleInputChange}
+                      className="w-6 h-6 text-indigo-600 rounded focus:ring-indigo-500 border-gray-300 cursor-pointer"
+                    />
+                    <label htmlFor="ai-images" className="font-bold text-slate-800 cursor-pointer select-none flex items-center gap-2">
+                      <ImageIcon className="w-5 h-5 text-indigo-600" /> Incluir Capa Gerada por IA
+                    </label>
                 </div>
-                <div className="flex-1">
-                  <label htmlFor="ai-images" className="font-medium text-slate-800 cursor-pointer select-none">
-                    Incluir Imagem de Capa Gerada por IA?
-                  </label>
-                  <p className="text-xs text-slate-500">Se marcada, a IA criará uma imagem para a capa (baseada nas Observações ou em uma sugestão do texto).</p>
-                </div>
-                <input 
-                  type="checkbox" 
-                  id="ai-images"
-                  name="includeImages"
-                  checked={formData.includeImages}
-                  onChange={handleInputChange}
-                  className="w-6 h-6 text-indigo-600 rounded focus:ring-indigo-500 border-gray-300 cursor-pointer"
-                />
+
+                {formData.includeImages && (
+                    <div className="space-y-4">
+                        <div className="border border-indigo-300 p-3 rounded-lg bg-white">
+                            <label className="block text-sm font-medium text-indigo-700 mb-2 flex items-center gap-1">
+                                <Lightbulb className="w-4 h-4" /> Prompt Exclusivo para Capa/Imagem
+                            </label>
+                            <textarea 
+                                name="dedicatedImagePrompt" 
+                                value={formData.dedicatedImagePrompt} 
+                                onChange={handleInputChange} 
+                                rows="2" 
+                                className="w-full p-2 text-sm rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none" 
+                                placeholder="Ex: Um castelo antigo em estilo fantasia, arte digital, cores vibrantes."
+                            ></textarea>
+                            <p className="text-xs text-slate-500 mt-1">**Recomendado:** Use um prompt simples e descritivo aqui para maior chance de sucesso na imagem.</p>
+                        </div>
+                        <p className="text-xs text-slate-600 italic">
+                            *Se o campo acima estiver vazio, a IA tentará encontrar uma sugestão no texto que ela gerar. Se estiver preenchido, ela usará este prompt e o texto será ignorado para fins de imagem.*
+                        </p>
+                    </div>
+                )}
               </div>
 
+
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Observações para a IA <span className="text-xs text-red-500 font-normal">(Se você marcou 'Incluir Imagem', este texto será o prompt da capa)</span></label>
-                <textarea name="notes" value={formData.notes} onChange={handleInputChange} rows="2" className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Ex: Usar linguagem simples, focar em exemplos. Descreva a imagem de capa aqui se for usá-la."></textarea>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Observações Gerais (Tom, Público, Estrutura)</label>
+                <textarea name="notes" value={formData.notes} onChange={handleInputChange} rows="2" className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Ex: Usar linguagem simples, focar em exemplos para crianças de 10 anos."></textarea>
               </div>
 
               <button 
