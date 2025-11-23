@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   BookOpen, Wand2, Upload, CheckCircle2, FileText, 
-  Languages, Loader2, Settings2, Image as ImageIcon, 
+  Loader2, Settings2, Image as ImageIcon, 
   Download, Key, AlertCircle, Eye, EyeOff
 } from 'lucide-react';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -9,15 +9,18 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 // Regex para encontrar a primeira sugestão de imagem no texto e capturar a descrição
 const IMAGE_SUGGESTION_REGEX = /\[SUGESTÃO DE IMAGEM: (.*?)]/i;
 
-// Frases bem-humoradas para a tela de carregamento
+// Frases bem-humoradas e piadas para a tela de carregamento (Atualizado com humor infantil!)
 const loadingPhrases = [
-  "Calma! Pra quê essa pressa toda?",
+  "O que é, o que é: Feito para andar, mas não anda? (A rua)",
+  "Piada de pontinho: O pontinho vermelho subiu no muro e caiu. Por quê? (Porque ele estava maduro!)",
+  "Por que a aranha não lava a louça? (Porque ela tem medo de prato!)",
+  "O que o tomate foi fazer no banco? (Foi tirar extrato!)",
+  "Calma! Pra quê essa pressa toda? A IA está lendo piadas de 'o que é, o que é'...",
   "A IA está pensando na vida... e no seu livro!",
   "Tomando um cafézinho virtual para inspirar a IA...",
   "Estamos traduzindo seu prompt para a linguagem da matrix. Segura a ansiedade!",
   "Quase lá! Seu eBook está saindo do forno digital...",
   "A capa está recebendo um toque de genialidade. Isso leva tempo!",
-  "Verificando se as referências estão corretas (ou inventando umas boas!).",
   "Aguarde. A criatividade artificial está no máximo."
 ];
 
@@ -32,7 +35,7 @@ export default function App() {
   const [pdfLibraryLoaded, setPdfLibraryLoaded] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false); 
   
-  // Novo estado para a frase de carregamento bem-humorada
+  // Estado para a frase de carregamento bem-humorada
   const [currentJoke, setCurrentJoke] = useState(loadingPhrases[0]); 
 
   // Estados para a geração de imagem
@@ -74,7 +77,7 @@ export default function App() {
         clearInterval(intervalId);
       }
     };
-  }, [isProcessing]); // Dependência de isProcessing
+  }, [isProcessing]);
 
   // Carrega a biblioteca de PDF automaticamente via CDN
   useEffect(() => {
@@ -145,6 +148,7 @@ export default function App() {
 
         if (!response.ok) {
           const errorBody = await response.json().catch(() => ({}));
+          console.error("Erro na API de Imagem. Resposta Completa:", errorBody);
           throw new Error(`API retornou status ${response.status}: ${errorBody.error?.message || response.statusText}`);
         }
 
@@ -547,8 +551,21 @@ export default function App() {
 
   // --- UI para Criação (Tela 1) ---
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 font-sans pb-20">
-      <header className="bg-white shadow-sm border-b border-indigo-100">
+    // Fundo mais colorido (Gradiente Rosa e Roxo)
+    <div className="relative min-h-screen font-sans pb-20 bg-gradient-to-br from-pink-50 to-purple-100">
+      
+      {/* Camada de Background/Marca d'água (Prateleira de Livros Estilizada) */}
+      <div 
+        className="fixed inset-0 pointer-events-none z-0 opacity-10" 
+        style={{
+          // Padrão que simula uma textura estilizada (usando um placeholder para ser seguro e leve)
+          backgroundImage: `url('https://placehold.co/150x150/D0A0F0/FFFFFF?text=BOOK')`,
+          backgroundRepeat: 'repeat',
+          backgroundSize: '150px 150px',
+        }}
+      ></div>
+
+      <header className="relative z-10 bg-white shadow-lg border-b border-purple-200">
         <div className="max-w-5xl mx-auto px-4 py-4">
           <div className="flex items-center gap-3">
             <div className="bg-indigo-600 p-2 rounded-lg"><BookOpen className="w-6 h-6 text-white" /></div>
@@ -557,7 +574,8 @@ export default function App() {
         </div>
       </header>
       
-      <main className="max-w-3xl mx-auto px-4 py-8">
+      {/* O main tem um z-index para ficar acima da marca d'água */}
+      <main className="relative z-10 max-w-3xl mx-auto px-4 py-8">
         
         {isProcessing && (
           <div className="fixed inset-0 bg-white/70 backdrop-blur-sm flex items-center justify-center z-[100]">
@@ -666,7 +684,7 @@ export default function App() {
       </main>
       
       {/* Container Fixo para a Chave API (Canto Inferior Direito) */}
-      <div className="fixed bottom-4 right-4 p-2 bg-white shadow-2xl rounded-xl border border-slate-200 z-[100] w-full max-w-xs transition-opacity hover:opacity-100 opacity-90">
+      <div className="relative z-10 fixed bottom-4 right-4 p-2 bg-white shadow-2xl rounded-xl border border-slate-200 w-full max-w-xs transition-opacity hover:opacity-100 opacity-90">
           <div className="flex items-center gap-2">
             <Key className="w-4 h-4 text-slate-500" />
             <input 
