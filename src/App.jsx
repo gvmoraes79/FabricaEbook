@@ -77,7 +77,7 @@ export default function App() {
   // --- Lógica de Geração de Imagem com Reintentos (Exponential Backoff) ---
   const generateImage = useCallback(async (promptForImage) => {
     setIsImageGenerating(true);
-    setImagePrompt(promptForImage);
+    // IMPORTANTE: Removemos setImagePrompt daqui e colocamos em handleSubmit
     const maxRetries = 5;
     let currentRetry = 0;
 
@@ -210,6 +210,7 @@ export default function App() {
         const coverImageY = pageHeight / 2 - 30; // Posição abaixo do título
 
         try {
+            // A imagem deve ser um URL base64, que funciona com addImage
             doc.addImage(imageUrl, 'PNG', coverImageX, coverImageY, coverImageWidth, coverImageHeight);
             
             // Créditos da imagem
@@ -274,6 +275,7 @@ export default function App() {
     setIsProcessing(true);
     setResultReady(false);
     setGeneratedImageURL(null); // Limpa imagem anterior
+    setImagePrompt(''); // Limpa prompt anterior
     
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
@@ -319,6 +321,9 @@ export default function App() {
           if (match && match[1]) {
               // Usamos o prompt do texto como base para a imagem da capa
               const promptForImage = match[1].trim(); 
+              
+              // >>>>> CORREÇÃO DE BUG: Definir o prompt da imagem no estado AQUI <<<<<
+              setImagePrompt(promptForImage); 
               
               setStatusMessage(`Passo 2/2: Conteúdo pronto. Iniciando geração AUTOMÁTICA da imagem para a Capa: "${promptForImage}"...`);
               
