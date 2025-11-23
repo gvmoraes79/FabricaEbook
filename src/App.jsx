@@ -65,11 +65,9 @@ export default function App() {
     }
   };
 
-  // --- Lógica de Geração de PDF Corrigida ---
+  // --- Lógica de Geração de PDF Corrigida (Com Margens e Parágrafos Aprimorados) ---
   const generatePDF = (text, title) => {
-    // Adicionamos um modal customizado (em vez de alert) caso a biblioteca não esteja pronta
     if (!window.jspdf) {
-      // Usando uma div temporária para notificação em vez de alert()
       const notification = document.createElement('div');
       notification.textContent = "A ferramenta de PDF ainda está carregando. Tente novamente em alguns segundos.";
       notification.style.cssText = "position:fixed; top:20px; right:20px; background:red; color:white; padding:10px; border-radius:5px; z-index:9999;";
@@ -89,32 +87,75 @@ export default function App() {
     const pageWidth = 210;
     const pageHeight = 297;
     const usableWidth = pageWidth - (margin * 2);
+    const lineHeight = 7; // Espaçamento entre linhas (mm)
+    const paragraphSpacing = 3; // Espaço extra entre parágrafos (mm)
     
     doc.setFont("helvetica", "normal");
     doc.setFontSize(12);
 
-    const splitText = doc.splitTextToSize(text, usableWidth);
-    
     let cursorY = margin;
 
-    // Capa
-    doc.setFontSize(24);
-    doc.text(title, pageWidth / 2, pageHeight / 2, { align: 'center' });
-    doc.setFontSize(12);
-    doc.text("Gerado via AI eBook Studio", pageWidth / 2, (pageHeight / 2) + 15, { align: 'center' });
+    // Capa (Cover Page) Aprimorada
+    doc.setFontSize(28); 
+    doc.setFont("helvetica", "bold");
+    doc.text(title, pageWidth / 2, pageHeight / 2 - 10, { align: 'center' });
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "normal");
+    doc.text("Seu eBook Gerado por Inteligência Artificial", pageWidth / 2, pageHeight / 2, { align: 'center' });
+    doc.setFontSize(10);
+    doc.text("AI eBook Studio", pageWidth / 2, pageHeight - 30, { align: 'center' });
     doc.addPage();
+    cursorY = margin; // Reset cursor for new page
 
-    // Conteúdo
-    splitText.forEach(line => {
-      if (cursorY > pageHeight - margin) { 
-        doc.addPage();
-        cursorY = margin; 
+    // Conteúdo Principal
+    // 1. Dividir o texto em blocos/parágrafos (usando uma quebra de linha simples '\n' para ser mais abrangente)
+    const blocks = text.split('\n');
+
+    blocks.forEach(block => {
+      const trimmedBlock = block.trim();
+      if (!trimmedBlock) return; 
+
+      // 2. Tenta identificar Títulos (usando heurística simples de Markdown como ## ou texto em maiúsculo)
+      let currentLineHeight = lineHeight;
+      let currentSpacing = paragraphSpacing;
+      
+      if (trimmedBlock.startsWith('##') || trimmedBlock.startsWith('#') || trimmedBlock.toUpperCase() === trimmedBlock && trimmedBlock.length < 50) {
+          doc.setFontSize(16);
+          doc.setFont("helvetica", "bold");
+          currentLineHeight = 9;
+          currentSpacing = paragraphSpacing * 2;
+      } else {
+          doc.setFontSize(12);
+          doc.setFont("helvetica", "normal");
       }
-      doc.text(line, margin, cursorY);
-      cursorY += 7; 
+      
+      // 3. Quebra o bloco em linhas que cabem na largura utilizável
+      const lines = doc.splitTextToSize(trimmedBlock.replace(/^#+/, ''), usableWidth);
+
+      // 4. Adicionar espaçamento extra para parágrafo/bloco (exceto no início da página)
+      if (cursorY > margin) {
+        cursorY += currentSpacing; 
+      }
+
+      // 5. Desenhar as linhas
+      lines.forEach(line => {
+        if (cursorY > pageHeight - margin) { 
+          doc.addPage();
+          cursorY = margin; 
+          doc.setFontSize(12); // Reset size on new page
+          doc.setFont("helvetica", "normal");
+        }
+        
+        doc.text(line, margin, cursorY);
+        cursorY += currentLineHeight;
+      });
+      
+      // 6. Redefinir para o normal
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "normal");
     });
 
-    // Header e Footer
+    // Header e Footer (Lógica de numeração de página)
     const pageCount = doc.internal.getNumberOfPages();
     for (let i = 1; i <= pageCount; i++) {
       doc.setPage(i);
@@ -128,12 +169,11 @@ export default function App() {
     doc.save(`${title.replace(/\s+/g, '_')}.pdf`);
   };
 
-  // --- Lógica da IA ---
+  // --- Lógica da IA (Prompt Alterado para Forçar o Índice no Início) ---
   const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!apiKey) {
-      // Substituindo alert() por uma notificação customizada
       const notification = document.createElement('div');
       notification.textContent = "Por favor, insira sua chave de API do Google Studio no topo da página.";
       notification.style.cssText = "position:fixed; top:20px; right:20px; background:red; color:white; padding:10px; border-radius:5px; z-index:9999;";
@@ -147,7 +187,7 @@ export default function App() {
     
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
-      // Usando gemini-2.5-flash para compatibilidade com o ambiente Canvas
+      // O modelo já está corrigido para gemini-2.5-flash
       const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
       let prompt = "";
@@ -156,11 +196,12 @@ export default function App() {
         setStatusMessage('Planejando capítulos e escrevendo...');
         prompt = `
           Atue como um escritor profissional. Escreva um ebook completo sobre o tema: "${formData.theme}".
+          **MANDATÓRIO: Comece o seu texto com um índice detalhado dos capítulos e subcapítulos.**
           Idioma: ${formData.language}.
           Público-alvo/Obs: ${formData.notes}.
           O ebook deve ser detalhado, ter uma introdução, vários capítulos bem desenvolvidos e uma conclusão.
           Tamanho estimado de conteúdo: equivalente a entre ${formData.minPages} e ${formData.maxPages} páginas de leitura.
-          Use formatação clara com Títulos e Parágrafos.
+          Use formatação clara com Títulos (use ## para títulos principais) e Parágrafos.
           ${formData.includeImages ? "INSTRUÇÃO IMPORTANTE: O usuário solicitou imagens. Inclua sugestões visuais detalhadas no texto marcadas exatamente assim: [SUGESTÃO DE IMAGEM: descrição da cena]." : "Não inclua sugestões de imagens."}
         `;
       } else {
@@ -194,7 +235,6 @@ export default function App() {
       console.error(error);
       setStatusMessage('Erro: ' + error.message);
       
-      // Substituindo alert() por uma notificação customizada
       const notification = document.createElement('div');
       notification.textContent = `Erro ao conectar com o Google. Verifique sua Chave API. Detalhe: ${error.message}`;
       notification.style.cssText = "position:fixed; top:20px; right:20px; background:red; color:white; padding:10px; border-radius:5px; z-index:9999;";
