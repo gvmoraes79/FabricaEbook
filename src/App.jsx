@@ -138,7 +138,7 @@ const App = () => {
   // --- Lógica de Geração de Texto (Ebook) ---
   const generateEbookText = useCallback(async () => {
     if (!textPrompt.trim() || !isAuthReady || minPages <= 0 || maxPages <= 0 || minPages > maxPages) {
-      setTextError("Verifique o prompt e as configurações de página. Min e Máx devem ser maiores que zero, e Min deve ser menor ou igual a Máx.");
+      setTextError("Verifique o prompt e as configurações de página. Mín e Máx devem ser maiores que zero, e Mín deve ser menor ou igual a Máx.");
       return;
     }
 
@@ -255,7 +255,7 @@ Escreva o conteúdo solicitado de forma informativa, bem estruturada e envolvent
         min="1"
         value={value}
         onChange={(e) => onChange(parseInt(e.target.value) || 1)}
-        className="p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 transition"
+        className="p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-sky-500 focus:border-sky-500 transition"
         disabled={isTextLoading || !isAuthReady}
       />
     </div>
@@ -267,7 +267,7 @@ Escreva o conteúdo solicitado de forma informativa, bem estruturada e envolvent
         
         {/* Título Principal */}
         <header className="text-center mb-10 border-b pb-4">
-          <Sparkles className="w-10 h-10 text-indigo-600 mx-auto mb-3" />
+          <Sparkles className="w-10 h-10 text-sky-600 mx-auto mb-3" />
           <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900">
             Gerador Híbrido de Ebook 
           </h1>
@@ -281,9 +281,9 @@ Escreva o conteúdo solicitado de forma informativa, bem estruturada e envolvent
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
           
           {/* Coluna 1: Gerador de Conteúdo do Ebook (Texto) */}
-          <section className="bg-indigo-50 p-6 rounded-2xl shadow-lg">
+          <section className="bg-blue-50 p-6 rounded-2xl shadow-lg"> 
             <h2 className="text-2xl font-bold text-gray-800 flex items-center mb-6 border-b pb-3">
-              <BookOpen className="w-6 h-6 mr-2 text-indigo-600" />
+              <BookOpen className="w-6 h-6 mr-2 text-sky-600" />
               1. Configuração e Conteúdo do Ebook
             </h2>
             
@@ -294,7 +294,7 @@ Escreva o conteúdo solicitado de forma informativa, bem estruturada e envolvent
                     <FileText className="w-4 h-4 mr-1"/> Tópico Principal do Ebook
                 </label>
                 <textarea
-                  className="w-full p-4 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500 transition resize-none h-24"
+                  className="w-full p-4 border border-gray-300 rounded-xl shadow-sm focus:ring-sky-500 focus:border-sky-500 transition resize-none h-24"
                   placeholder="Ex: 'A história do café, da descoberta à cultura moderna'"
                   value={textPrompt}
                   onChange={(e) => setTextPrompt(e.target.value)}
@@ -310,7 +310,7 @@ Escreva o conteúdo solicitado de forma informativa, bem estruturada e envolvent
                 <select
                   value={idioma}
                   onChange={(e) => setIdioma(e.target.value)}
-                  className="w-full p-3 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500 transition"
+                  className="w-full p-3 border border-gray-300 rounded-xl shadow-sm focus:ring-sky-500 focus:border-sky-500 transition"
                   disabled={isTextLoading || !isAuthReady}
                 >
                   <option value="Português (Brasil)">Português (Brasil)</option>
@@ -344,7 +344,7 @@ Escreva o conteúdo solicitado de forma informativa, bem estruturada e envolvent
                     <MessageSquare className="w-4 h-4 mr-1"/> Observações e Estilo (Opcional)
                 </label>
                 <textarea
-                  className="w-full p-4 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500 transition resize-none h-20"
+                  className="w-full p-4 border border-gray-300 rounded-xl shadow-sm focus:ring-sky-500 focus:border-sky-500 transition resize-none h-20"
                   placeholder="Ex: 'Usar vocabulário simples e didático', 'Focar na era medieval'"
                   value={observacoes}
                   onChange={(e) => setObservacoes(e.target.value)}
@@ -359,7 +359,7 @@ Escreva o conteúdo solicitado de forma informativa, bem estruturada e envolvent
                   type="checkbox"
                   checked={includeImages}
                   onChange={(e) => setIncludeImages(e.target.checked)}
-                  className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                  className="w-4 h-4 text-sky-600 border-gray-300 rounded focus:ring-sky-500"
                   disabled={isTextLoading || !isAuthReady}
                 />
                 <label htmlFor="includeImages" className="ml-2 block text-sm font-medium text-gray-700">
@@ -372,7 +372,7 @@ Escreva o conteúdo solicitado de forma informativa, bem estruturada e envolvent
                 onClick={generateEbookText}
                 disabled={isTextLoading || !isAuthReady}
                 className={`w-full flex items-center justify-center gap-2 px-6 py-3 text-white font-semibold rounded-xl transition duration-200 shadow-lg 
-                  ${isTextLoading || !isAuthReady ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800'}`}
+                  ${isTextLoading || !isAuthReady ? 'bg-sky-400 cursor-not-allowed' : 'bg-sky-600 hover:bg-sky-700 active:bg-sky-800'}`}
               >
                 {isTextLoading ? (
                   <>
@@ -389,9 +389,9 @@ Escreva o conteúdo solicitado de forma informativa, bem estruturada e envolvent
             </div>
 
             {/* Resultado do Texto */}
-            <div className="mt-8 pt-4 border-t border-indigo-200">
+            <div className="mt-8 pt-4 border-t border-blue-200">
               <h3 className="text-xl font-semibold text-gray-700 mb-3 flex items-center">
-                <Maximize2 className="w-5 h-5 mr-1 text-indigo-600"/> Conteúdo Gerado
+                <Maximize2 className="w-5 h-5 mr-1 text-sky-600"/> Conteúdo Gerado
               </h3>
               <div className="min-h-[200px] bg-white p-4 rounded-xl shadow-inner border border-gray-200 whitespace-pre-wrap">
                 {textError && (
@@ -422,7 +422,7 @@ Escreva o conteúdo solicitado de forma informativa, bem estruturada e envolvent
                                 href={source.uri} 
                                 target="_blank" 
                                 rel="noopener noreferrer" 
-                                className="hover:text-indigo-600 transition flex items-start"
+                                className="hover:text-sky-600 transition flex items-start"
                               >
                                 <Link className="w-3 h-3 mt-1 mr-1 flex-shrink-0" />
                                 <span className="underline">{source.title}</span>
@@ -482,7 +482,7 @@ Escreva o conteúdo solicitado de forma informativa, bem estruturada e envolvent
               </button>
               {!includeImages && (
                 <p className="text-sm text-center text-gray-600 p-2 bg-gray-200 rounded-lg">
-                    Seção desativada. Marque a opção "Incluir" no Gerador de Conteúdo para habilitar.
+                    Seção desativada. Marque a opção "Incluir" na seção 1 para habilitar.
                 </p>
               )}
             </div>
