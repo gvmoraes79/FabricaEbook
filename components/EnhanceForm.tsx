@@ -52,6 +52,9 @@ export const EnhanceForm: React.FC<EnhanceFormProps> = ({ onSubmit, isLoading })
                     <option value="Português">Português</option>
                     <option value="English">English</option>
                     <option value="Español">Español</option>
+                    <option value="Français">Français</option>
+                    <option value="Italiano">Italiano</option>
+                    <option value="Mandarim">Mandarim</option>
                 </select>
             </div>
             <div className="w-full">
