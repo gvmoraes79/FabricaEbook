@@ -1,11 +1,11 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import type { Outline, EnhanceOptions } from '../types';
 
-// Helper para instanciar a IA com a chave fornecida dinamicamente pelo usuário
+// Helper para instanciar a IA com a chave fornecida dinamicamente pelo usuário a cada chamada
 const getAi = (apiKey: string) => new GoogleGenAI({ apiKey });
 const IMAGE_PROMPT_MARKER = "IMAGE_PROMPT:";
 
-// Função auxiliar para gerar imagens
+// Função auxiliar interna para gerar imagens usando uma instância já autenticada
 const generateImage = async (ai: GoogleGenAI, prompt: string): Promise<string | undefined> => {
     try {
         const response = await ai.models.generateContent({
@@ -54,7 +54,6 @@ export const generateCoverImage = async (apiKey: string, title: string, topic: s
 export const generateOutline = async (apiKey: string, topic: string, minPageCount: number, maxPageCount: number, language: string, observations: string): Promise<Outline> => {
     const ai = getAi(apiKey);
     const averagePageCount = Math.ceil((minPageCount + maxPageCount) / 2);
-    // Estimativa de capítulos baseada no número de páginas (aprox 2-3 paginas por capitulo)
     const numChapters = Math.max(3, Math.ceil(averagePageCount / 3));
     const observationsPrompt = observations ? `\nInstructions: "${observations}"` : "";
     
@@ -83,7 +82,7 @@ Return JSON format.`,
         return JSON.parse(text.trim()) as Outline;
     } catch (error) {
         console.error("Error outline:", error);
-        throw new Error("Falha ao gerar o esboço.");
+        throw new Error("Falha ao gerar o esboço. Verifique a chave API.");
     }
 };
 
@@ -158,7 +157,7 @@ export const structureText = async (apiKey: string, fullText: string) => {
     try {
         const response = await ai.models.generateContent({
             model: "gemini-3-pro-preview",
-            contents: `Structure this text into an e-book JSON format with title and chapters: ${fullText.substring(0, 30000)}`, // Limit input to avoid token limits
+            contents: `Structure this text into an e-book JSON format with title and chapters: ${fullText.substring(0, 30000)}`,
             config: {
                 responseMimeType: "application/json",
                 responseSchema: {
