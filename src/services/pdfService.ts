@@ -12,10 +12,10 @@ export const generatePdf = async (element: HTMLElement, fileName: string): Promi
         const doc = new jsPDF('p', 'pt', 'a4');
 
         // Margens [Topo, Direita, Base, Esquerda]
-        // Aumentei a base para 60pt para evitar cortes no rodapé e adicionei 40pt nas laterais
+        // Aumentei a base para 60pt para forçar quebra antes da borda
         const pdfMargins = [40, 40, 60, 40]; 
 
-        // Largura útil da página (Largura total - Margem Esquerda - Margem Direita)
+        // Largura útil da página
         const contentWidth = 595.28 - pdfMargins[1] - pdfMargins[3];
 
         doc.html(element, {
@@ -23,17 +23,17 @@ export const generatePdf = async (element: HTMLElement, fileName: string): Promi
                 pdf.save(`${fileName.replace(/ /g, '_')}.pdf`);
                 resolve();
             },
-            x: pdfMargins[3], // Começa na margem esquerda (40pt)
-            y: pdfMargins[0], // Começa na margem superior (40pt)
+            x: pdfMargins[3],
+            y: pdfMargins[0],
             margin: pdfMargins,
-            autoPaging: 'text', // Tenta evitar cortar linhas de texto
-            width: contentWidth, // Força o conteúdo a caber na área útil
-            windowWidth: element.scrollWidth, // Usa a largura original do elemento para renderização
+            autoPaging: 'text', // Modo inteligente de quebra de texto
+            width: contentWidth,
+            windowWidth: element.scrollWidth, 
             html2canvas: {
-                scale: 0.8, // Leve redução de escala para garantir que o conteúdo caiba confortavelmente
+                scale: 0.75, // Reduz levemente a escala para garantir que cabe nas margens
                 useCORS: true,
                 logging: false,
-                letterRendering: true // Melhora a renderização de fontes
+                letterRendering: true
             }
         });
     });
