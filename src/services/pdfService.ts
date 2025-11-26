@@ -8,28 +8,32 @@ export const generatePdf = async (element: HTMLElement, fileName: string): Promi
         }
 
         const { jsPDF } = jspdf;
-        // Cria PDF A4, unidade pontos (pt)
+        // Cria PDF A4 (595.28 x 841.89 pt)
         const doc = new jsPDF('p', 'pt', 'a4');
 
-        // Configuração de margens para garantir que o conteúdo não encoste nas bordas
-        // A lógica doc.html já tenta quebrar páginas, mas as margens [Topo, Direita, Base, Esquerda] ajudam.
-        const pdfMargins = [30, 0, 40, 0]; // 30pt Topo, 40pt Base (para não cortar rodapé)
+        // Margens [Topo, Direita, Base, Esquerda]
+        // Aumentei a base para 60pt para evitar cortes no rodapé e adicionei 40pt nas laterais
+        const pdfMargins = [40, 40, 60, 40]; 
+
+        // Largura útil da página (Largura total - Margem Esquerda - Margem Direita)
+        const contentWidth = 595.28 - pdfMargins[1] - pdfMargins[3];
 
         doc.html(element, {
             callback: function (pdf) {
                 pdf.save(`${fileName.replace(/ /g, '_')}.pdf`);
                 resolve();
             },
-            x: 0,
-            y: 0,
+            x: pdfMargins[3], // Começa na margem esquerda (40pt)
+            y: pdfMargins[0], // Começa na margem superior (40pt)
             margin: pdfMargins,
-            autoPaging: 'text', // Importante para não cortar linhas de texto ao meio
-            width: 595.28, // Largura A4 padrão
-            windowWidth: element.scrollWidth, // Captura resolução correta
+            autoPaging: 'text', // Tenta evitar cortar linhas de texto
+            width: contentWidth, // Força o conteúdo a caber na área útil
+            windowWidth: element.scrollWidth, // Usa a largura original do elemento para renderização
             html2canvas: {
-                scale: 1,
+                scale: 0.8, // Leve redução de escala para garantir que o conteúdo caiba confortavelmente
                 useCORS: true,
-                logging: false
+                logging: false,
+                letterRendering: true // Melhora a renderização de fontes
             }
         });
     });
