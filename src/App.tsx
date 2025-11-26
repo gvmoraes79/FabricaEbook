@@ -131,6 +131,15 @@ const App: React.FC = () => {
         }
     }, [apiKey]);
 
+    const handleUpdateChapter = useCallback((index: number, newContent: string) => {
+        setEbook(prev => {
+            if (!prev) return null;
+            const updatedChapters = [...prev.chapters];
+            updatedChapters[index] = { ...updatedChapters[index], content: newContent };
+            return { ...prev, chapters: updatedChapters };
+        });
+    }, []);
+
     const handleDownloadPdf = useCallback(async () => {
         if (!ebookPreviewRef.current || !ebook) return;
         setStatusMessage('Gerando PDF...');
@@ -142,6 +151,23 @@ const App: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
+    }, [ebook]);
+
+    const handleDownloadTxt = useCallback(() => {
+        if (!ebook) return;
+        let textContent = `# ${ebook.title}\n\n`;
+        ebook.chapters.forEach(chapter => {
+            textContent += `## ${chapter.title}\n\n${chapter.content}\n\n`;
+        });
+        const blob = new Blob([textContent], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${ebook.title.replace(/ /g, '_')}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     }, [ebook]);
 
     if (!apiKey) {
@@ -185,16 +211,24 @@ const App: React.FC = () => {
 
                 {ebook && (
                     <div className="w-full max-w-4xl mt-12">
-                         <div className="flex justify-between items-center mb-4">
+                         <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
                             <h3 className="text-2xl font-bold text-white">Resultado</h3>
-                            <div className="flex gap-2">
-                                <button onClick={() => { setApiKey(''); localStorage.removeItem('gemini_api_key'); }} className="text-sm text-slate-400 underline">Sair</button>
-                                <button onClick={handleDownloadPdf} disabled={isLoading} className="px-6 py-2 bg-cyan-500 text-slate-900 font-bold rounded-lg hover:bg-cyan-600">
+                            <div className="flex flex-wrap gap-2 justify-center">
+                                <button onClick={() => { setApiKey(''); localStorage.removeItem('gemini_api_key'); }} className="text-sm text-slate-400 underline px-3">Sair</button>
+                                <button onClick={handleDownloadTxt} disabled={isLoading} className="px-4 py-2 bg-slate-700 text-white font-semibold rounded-lg hover:bg-slate-600 transition">
+                                    Baixar Texto (.txt)
+                                </button>
+                                <button onClick={handleDownloadPdf} disabled={isLoading} className="px-6 py-2 bg-cyan-500 text-slate-900 font-bold rounded-lg hover:bg-cyan-600 transition shadow-lg shadow-cyan-500/20">
                                     {isLoading ? 'Gerando...' : 'Baixar PDF'}
                                 </button>
                             </div>
                         </div>
-                        <EbookPreview ref={ebookPreviewRef} ebook={ebook} diagramming={isDiagrammed} />
+                        <EbookPreview 
+                            ref={ebookPreviewRef} 
+                            ebook={ebook} 
+                            diagramming={isDiagrammed} 
+                            onUpdateChapter={handleUpdateChapter}
+                        />
                     </div>
                 )}
             </main>
